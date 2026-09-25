@@ -6,6 +6,7 @@ import { AlertBanner, LoadingCard } from '@/components/ui/feedback';
 import type { CreativeAiProvider } from '@/app/(dashboard)/creative-agent/video-registry/_types/creative-ai';
 import { AiDefaultsPanel } from './_components/ai-defaults-panel';
 import { AiDocumentsPanel } from './_components/ai-documents-panel';
+import { AiTargetDefaultsPanel } from './_components/ai-target-defaults-panel';
 import { AiPromptsPanel } from './_components/ai-prompts-panel';
 import { AiProviderCard } from './_components/ai-provider-card';
 import { AiSignInDialog } from './_components/ai-sign-in-dialog';
@@ -80,6 +81,8 @@ export default function AiSettingsPage() {
         onReset={(kind) => void controller.resetPrompt(kind)}
         onActivated={(setting) => controller.applyPrompt(setting)}
       />
+
+      <AiTargetDefaultsPanel />
 
       <AiDocumentsPanel />
 

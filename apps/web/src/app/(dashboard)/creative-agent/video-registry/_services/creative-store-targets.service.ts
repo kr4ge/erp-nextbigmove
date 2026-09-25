@@ -24,6 +24,17 @@ export type CreativeStoreTargetValues = {
 /** What the ERP would derive from the store's own reconciled orders. */
 export type DerivedBreakeven = { breakevenCpp: number | null; deliveredOrders: number; days: number };
 
+/** Which figures a store decided for itself, and which came from the tenant fallback. */
+export type StoreTargetSource = 'STORE' | 'TENANT_DEFAULT' | 'MIXED' | 'NONE';
+
+export type CreativeTargetDefaults = {
+  targets: (CreativeStoreTargetValues & { updatedAt: string | null; updatedBy: string | null }) | null;
+  isSet: boolean;
+  canEdit: boolean;
+  storesWithOwnTargets: number;
+  storesInheriting: number;
+};
+
 export type CreativeStoreTargets = {
   storeConfigId: string;
   posStoreId: string | null;
@@ -66,5 +77,24 @@ export async function fetchDerivedBreakeven(storeConfigId: string): Promise<Deri
   } catch {
     // A missing reference figure must never block the form.
     return { breakevenCpp: null, deliveredOrders: 0, days: 90 };
+  }
+}
+
+/** The tenant's fallback targets, inherited by any store that sets none. */
+export async function fetchTargetDefaults(): Promise<CreativeTargetDefaults> {
+  try {
+    const { data } = await apiClient.get<CreativeTargetDefaults>('/creative-agent/stores/target-defaults');
+    return data;
+  } catch (error) {
+    throw targetError(error, 'Unable to load the default targets.');
+  }
+}
+
+export async function saveTargetDefaults(values: CreativeStoreTargetValues): Promise<CreativeTargetDefaults> {
+  try {
+    const { data } = await apiClient.put<CreativeTargetDefaults>('/creative-agent/stores/target-defaults', values);
+    return data;
+  } catch (error) {
+    throw targetError(error, 'Unable to save the default targets.');
   }
 }

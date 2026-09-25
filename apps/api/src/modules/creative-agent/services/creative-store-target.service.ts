@@ -6,6 +6,9 @@ import type { UpsertCreativeStoreTargetDto } from '../dto/creative-store-target.
 import type { CreativeActor } from '../types/creative-actor.type';
 import { CreativeAccessService } from './creative-access.service';
 
+/** Which figures came from the store itself rather than the tenant fallback. */
+export type StoreTargetSource = 'STORE' | 'TENANT_DEFAULT' | 'MIXED' | 'NONE';
+
 export type StoreTargetValues = {
   hookRatePct: number | null;
   holdRatePct: number | null;
@@ -24,6 +27,9 @@ export type StoreTargetValues = {
   maxCancellationPct: number | null;
   maxRtsPct: number | null;
   note: string | null;
+  /** Set when any value was inherited, so the prompt can say so. */
+  source?: StoreTargetSource;
+  inheritedKeys?: string[];
 };
 
 export const STORE_TARGET_KEYS = [
@@ -87,10 +93,109 @@ export class CreativeStoreTargetService {
     }));
   }
 
-  /** One store's targets. Used at analysis time; no actor, tenant-scoped. */
+  /**
+   * One store's targets, with the tenant's defaults filling any gap.
+   *
+   * A tenant can run a hundred stores; asking someone to type the same six
+   * numbers into each is data entry, not judgement. So a blank field falls
+   * back to the tenant default and the result records which values were
+   * inherited, because the prompt must not present a fallback as a decision
+   * somebody made about this store.
+   */
   async forStore(tenantId: string, storeConfigId: string): Promise<StoreTargetValues | null> {
-    const row = await this.prisma.creativeStoreTarget.findFirst({ where: { tenantId, storeConfigId } });
-    return this.hasAny(row) ? this.values(row!) : null;
+    const [own, fallback] = await Promise.all([
+      this.prisma.creativeStoreTarget.findFirst({ where: { tenantId, storeConfigId } }),
+      this.prisma.creativeAiTargetDefault.findUnique({ where: { tenantId } }),
+    ]);
+    const ownValues = this.hasAny(own) ? this.values(own!) : null;
+    const defaultValues = this.hasAny(fallback) ? this.values(fallback!) : null;
+    if (!ownValues && !defaultValues) return null;
+    if (!defaultValues) return { ...ownValues!, source: 'STORE', inheritedKeys: [] };
+    if (!ownValues) return { ...defaultValues, source: 'TENANT_DEFAULT', inheritedKeys: [...STORE_TARGET_KEYS] };
+
+    const merged = { ...ownValues };
+    const inherited: string[] = [];
+    for (const key of STORE_TARGET_KEYS) {
+      if (merged[key] == null && defaultValues[key] != null) {
+        merged[key] = defaultValues[key];
+        inherited.push(key);
+      }
+    }
+    if (!merged.note && defaultValues.note) merged.note = defaultValues.note;
+    return {
+      ...merged,
+      source: inherited.length === 0 ? 'STORE' : 'MIXED',
+      inheritedKeys: inherited,
+    };
+  }
+
+  /** The tenant's fallback, for the settings panel. */
+  async defaultsForTenant(actor: CreativeActor) {
+    const context = await this.access.resolve(actor);
+    this.access.require(
+      context,
+      CREATIVE_AGENT_PERMISSIONS.READ,
+      CREATIVE_AGENT_PERMISSIONS.READ_ALL,
+      CREATIVE_AGENT_PERMISSIONS.AI_USE,
+      CREATIVE_AGENT_PERMISSIONS.AI_MANAGE,
+    );
+    const row = await this.prisma.creativeAiTargetDefault.findUnique({
+      where: { tenantId: context.tenantId },
+      include: { updatedBy: { select: { firstName: true, lastName: true } } },
+    });
+    const storesWithOwn = await this.prisma.creativeStoreTarget.count({ where: { tenantId: context.tenantId } });
+    const activeStores = await this.prisma.creativeStoreConfig.count({ where: { tenantId: context.tenantId, active: true } });
+    return {
+      targets: this.present(row),
+      isSet: this.hasAny(row),
+      canEdit: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE),
+      storesWithOwnTargets: storesWithOwn,
+      storesInheriting: Math.max(0, activeStores - storesWithOwn),
+    };
+  }
+
+  /** Create or replace the tenant's fallback targets. */
+  async upsertDefaults(actor: CreativeActor, dto: UpsertCreativeStoreTargetDto) {
+    const context = await this.access.resolve(actor);
+    this.access.require(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE);
+    assertBandOrder(dto);
+    const decimal = (value: number | null | undefined) => (value == null ? null : new Prisma.Decimal(value));
+    const values = {
+      hookRatePct: decimal(dto.hookRatePct),
+      holdRatePct: decimal(dto.holdRatePct),
+      ctrPct: decimal(dto.ctrPct),
+      breakevenCpp: decimal(dto.breakevenCpp),
+      cpp: decimal(dto.cpp),
+      scaleCpp: decimal(dto.scaleCpp),
+      killCpp: decimal(dto.killCpp),
+      arPct: decimal(dto.arPct),
+      scaleArPct: decimal(dto.scaleArPct),
+      killArPct: decimal(dto.killArPct),
+      maxCancellationPct: decimal(dto.maxCancellationPct),
+      maxRtsPct: decimal(dto.maxRtsPct),
+      note: dto.note?.trim() || null,
+      updatedById: context.userId,
+    };
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.creativeAiTargetDefault.upsert({
+        where: { tenantId: context.tenantId },
+        create: { tenantId: context.tenantId, ...values },
+        update: values,
+        include: { updatedBy: { select: { firstName: true, lastName: true } } },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: context.tenantId,
+          userId: context.userId,
+          action: 'creative.target_defaults.update',
+          resource: 'CreativeAiTargetDefault',
+          resourceId: row.id,
+          changes: this.values(row) as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return row;
+    });
+    return { targets: this.present(saved), isSet: this.hasAny(saved) };
   }
 
   /**
@@ -284,10 +389,11 @@ function renderBand(
   label: string,
   format: (value: number | null | undefined) => string,
   input: { scale: number | null; target: number | null; breakeven?: number | null; kill: number | null },
+  targetMark = '',
 ): string[] {
   const band = resolveBands(input.target, input.scale, input.kill);
   const lines = [
-    `- ${label} target: ${format(band.target)} (the ambition; at or below this the creative is working)`,
+    `- ${label} target: ${format(band.target)}${targetMark} (the ambition; at or below this the creative is working)`,
     `- ${label} scale below: ${format(band.scale)} (proven headroom; recommend increasing budget${band.scaleDerived ? `, derived as ${BAND_RATIOS.scale * 100}% of the target` : ''})`,
     `- ${label} kill above: ${format(band.kill)} (losing money faster than it can recover${band.killDerived ? `, derived as ${BAND_RATIOS.kill * 100}% of the target` : ''})`,
   ];
@@ -305,15 +411,22 @@ export function renderStoreTargets(storeName: string, targets: StoreTargetValues
     maxCancellationPct: null, maxRtsPct: null, note: null,
   };
   const values = targets ?? empty;
+  const inherited = new Set(values.inheritedKeys ?? []);
+  const provenance = !targets
+    ? `${storeName} has no target KPIs set yet. Every value below is "not set".`
+    : values.source === 'TENANT_DEFAULT'
+      ? `Targets for ${storeName}. This store has set none of its own, so every figure below is the tenant-wide default rather than a judgement made about this store. Judge against these bands, and say in your action that the store should set its own.`
+      : values.source === 'MIXED'
+        ? `Targets for ${storeName}. Figures marked [tenant default] were inherited because this store left them blank; the rest are this store's own. Judge against these bands, not against a single number.`
+        : `Targets for ${storeName}, set by this store. Judge against these bands, not against a single number.`;
+  const mark = (key: string) => (inherited.has(key) ? ' [tenant default]' : '');
   return [
-    targets
-      ? `Targets for ${storeName}. Judge against these bands, not against a single number:`
-      : `${storeName} has no target KPIs set yet. Every value below is "not set".`,
-    ...renderBand('CPP', moneyText, { scale: values.scaleCpp, target: values.cpp, breakeven: values.breakevenCpp, kill: values.killCpp }),
-    ...renderBand('AR%', pctText, { scale: values.scaleArPct, target: values.arPct, kill: values.killArPct }),
-    `- Maximum acceptable cancellation rate: ${pctText(values.maxCancellationPct)}`,
-    `- Maximum acceptable RTS rate: ${pctText(values.maxRtsPct)}`,
-    `- Minimum hook rate: ${pctText(values.hookRatePct)} (a floor: above it is good, below it is a weakness to explain)`,
+    provenance,
+    ...renderBand('CPP', moneyText, { scale: values.scaleCpp, target: values.cpp, breakeven: values.breakevenCpp, kill: values.killCpp }, mark('cpp')),
+    ...renderBand('AR%', pctText, { scale: values.scaleArPct, target: values.arPct, kill: values.killArPct }, mark('arPct')),
+    `- Maximum acceptable cancellation rate: ${pctText(values.maxCancellationPct)}${mark('maxCancellationPct')}`,
+    `- Maximum acceptable RTS rate: ${pctText(values.maxRtsPct)}${mark('maxRtsPct')}`,
+    `- Minimum hook rate: ${pctText(values.hookRatePct)}${mark('hookRatePct')} (a floor: above it is good, below it is a weakness to explain)`,
     '- Hold rate and link CTR have no store figure: judge them against platform norms for cold traffic (hold rate healthy from about 40%, link CTR from about 1%) and say that is what you compared against.',
     ...(values.note ? [`- Note from the store: ${values.note}`] : []),
   ].join('\n');

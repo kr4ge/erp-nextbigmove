@@ -21,6 +21,24 @@ type CreativeRequest = { user: CreativeActor };
 export class CreativeStoreTargetController {
   constructor(private readonly targets: CreativeStoreTargetService) {}
 
+  /**
+   * The tenant's fallback targets, inherited by any store that sets none.
+   * Reading needs the same permission as reading creatives; changing them is
+   * an advertising judgement that reaches every store, so it needs
+   * performance management.
+   */
+  @Get('target-defaults')
+  @Permissions('creative_agent.read', 'creative_agent.read_all', 'creative_agent.ai.use', 'creative_agent.ai.manage')
+  defaults(@Request() req: CreativeRequest) {
+    return this.targets.defaultsForTenant(req.user);
+  }
+
+  @Put('target-defaults')
+  @Permissions('creative_agent.performance.manage')
+  upsertDefaults(@Request() req: CreativeRequest, @Body() body: UpsertCreativeStoreTargetDto) {
+    return this.targets.upsertDefaults(req.user, body);
+  }
+
   /** Every active store with its targets, keyed by both the creative config and the POS store. */
   @Get('targets')
   @Permissions('creative_agent.read', 'creative_agent.read_all', 'creative_agent.ai.use', 'creative_agent.ai.manage')

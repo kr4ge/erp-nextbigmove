@@ -26,7 +26,7 @@ const values = (overrides: Partial<StoreTargetValues> = {}): StoreTargetValues =
   ...overrides,
 });
 
-function setup(options: { store?: any; target?: any } = {}) {
+function setup(options: { store?: any; target?: any; tenantDefault?: any } = {}) {
   const permissions = ['creative_agent.read', 'creative_agent.performance.manage'];
   const context = { tenantId, userId, isSuperAdmin: false, permissions: new Set(permissions) };
   const prisma: any = {
@@ -36,7 +36,12 @@ function setup(options: { store?: any; target?: any } = {}) {
     },
     creativeStoreTarget: {
       findFirst: jest.fn(async () => options.target ?? null),
+      count: jest.fn(async () => 1),
       upsert: jest.fn(async (args: any) => ({ id: 'tgt-1', ...args.create, updatedAt: new Date(), updatedBy: null })),
+    },
+    creativeAiTargetDefault: {
+      findUnique: jest.fn(async () => options.tenantDefault ?? null),
+      upsert: jest.fn(async (args: any) => ({ id: 'def-1', ...args.create, updatedAt: new Date(), updatedBy: null })),
     },
     auditLog: { create: jest.fn(async () => ({})) },
     $transaction: jest.fn(async (fn: any) => fn(prisma)),
@@ -153,6 +158,64 @@ describe('assertBandOrder', () => {
   });
 });
 
+describe('CreativeStoreTargetService.forStore inheritance', () => {
+  // A tenant can run a hundred stores; the fallback is what stops the same six
+  // numbers being typed a hundred times. What matters is that the prompt can
+  // still tell a fallback apart from a decision.
+  const tenantDefault = { breakevenCpp: dec(400), cpp: dec(300), arPct: dec(33), maxCancellationPct: dec(10), maxRtsPct: dec(20), hookRatePct: dec(40) };
+
+  it('returns null only when neither the store nor the tenant has anything', async () => {
+    const { service } = setup({ target: null, tenantDefault: null });
+    expect(await service.forStore(tenantId, storeConfigId)).toBeNull();
+  });
+
+  it('hands over the tenant default wholesale when the store set nothing', async () => {
+    const { service } = setup({ target: null, tenantDefault });
+    const result = await service.forStore(tenantId, storeConfigId);
+    expect(result).toMatchObject({ cpp: 300, breakevenCpp: 400, arPct: 33, maxRtsPct: 20, source: 'TENANT_DEFAULT' });
+    expect(result!.inheritedKeys).toContain('cpp');
+  });
+
+  it('lets the store win where it decided, and fills only the gaps', async () => {
+    const { service } = setup({ target: { cpp: dec(250), maxRtsPct: dec(15) }, tenantDefault });
+    const result = await service.forStore(tenantId, storeConfigId);
+    expect(result).toMatchObject({ cpp: 250, maxRtsPct: 15, breakevenCpp: 400, arPct: 33, source: 'MIXED' });
+    expect(result!.inheritedKeys).toEqual(expect.arrayContaining(['breakevenCpp', 'arPct', 'hookRatePct']));
+    expect(result!.inheritedKeys).not.toContain('cpp');
+  });
+
+  it('reports STORE with nothing inherited when the store set every value', async () => {
+    const full = Object.fromEntries(['breakevenCpp', 'cpp', 'scaleCpp', 'killCpp', 'arPct', 'scaleArPct', 'killArPct', 'maxCancellationPct', 'maxRtsPct', 'hookRatePct', 'holdRatePct', 'ctrPct'].map((key) => [key, dec(1)]));
+    const { service } = setup({ target: full, tenantDefault });
+    const result = await service.forStore(tenantId, storeConfigId);
+    expect(result!.source).toBe('STORE');
+    expect(result!.inheritedKeys).toEqual([]);
+  });
+});
+
+describe('renderStoreTargets provenance', () => {
+  it('tells the model plainly when every figure is the tenant default', () => {
+    const text = renderStoreTargets('Adore Prime', values({ cpp: 300, breakevenCpp: 400, arPct: 33, source: 'TENANT_DEFAULT', inheritedKeys: ['cpp', 'breakevenCpp', 'arPct'] }));
+    expect(text).toMatch(/has set none of its own/);
+    expect(text).toMatch(/should set its own/);
+    expect(text).toContain('CPP target: ₱300 [tenant default]');
+  });
+
+  it('marks only the inherited figures when the store decided some', () => {
+    const text = renderStoreTargets('Sass Essentials', values({ cpp: 250, arPct: 33, maxRtsPct: 20, source: 'MIXED', inheritedKeys: ['arPct', 'maxRtsPct'] }));
+    expect(text).toMatch(/were inherited because this store left them blank/);
+    expect(text).toContain('CPP target: ₱250 (');
+    expect(text).toContain('AR% target: 33% [tenant default]');
+    expect(text).toContain('RTS rate: 20% [tenant default]');
+  });
+
+  it('says the store set them when nothing was inherited', () => {
+    const text = renderStoreTargets('Sass Essentials', values({ cpp: 300, source: 'STORE', inheritedKeys: [] }));
+    expect(text).toMatch(/set by this store/);
+    expect(text).not.toContain('[tenant default]');
+  });
+});
+
 describe('CreativeStoreTargetService', () => {
   it('treats a row with every value blank as no targets at all', async () => {
     const { service } = setup({ target: { hookRatePct: null, cpp: null, breakevenCpp: null, note: 'later' } });
@@ -185,5 +248,24 @@ describe('CreativeStoreTargetService', () => {
   it('refuses a store from another tenant', async () => {
     const { service } = setup({ store: null });
     await expect(service.upsert(actor, storeConfigId, { cpp: 1 } as any)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('CreativeStoreTargetService.upsertDefaults', () => {
+  it('refuses bands that contradict each other, before writing', async () => {
+    const { service, prisma } = setup();
+    await expect(service.upsertDefaults(actor, { cpp: 300, breakevenCpp: 200 } as any)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.creativeAiTargetDefault.upsert).not.toHaveBeenCalled();
+  });
+
+  it('stores the tenant fallback and records the change', async () => {
+    const { service, prisma } = setup();
+    const saved = await service.upsertDefaults(actor, { breakevenCpp: 400, cpp: 300, arPct: 33, maxCancellationPct: 10, maxRtsPct: 20, hookRatePct: 40 } as any);
+    const written = prisma.creativeAiTargetDefault.upsert.mock.calls[0][0].create;
+    expect(Number(written.cpp)).toBe(300);
+    expect(Number(written.breakevenCpp)).toBe(400);
+    expect(written.scaleCpp).toBeNull();
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(saved.isSet).toBe(true);
   });
 });

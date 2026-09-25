@@ -116,6 +116,7 @@ model Tenant {
   creativeAiReferenceDocuments        CreativeAiReferenceDocument[]
   creativeAiRunFrames                 CreativeAiRunFrame[]
   creativeStoreTargets                CreativeStoreTarget[]
+  creativeAiTargetDefault             CreativeAiTargetDefault?
   creativeEnrollmentReviews           CreativeEnrollmentReview[]
   creativeAiPolicy                    CreativeAiPolicy?
   metaAdInsightDuplicateArchives      MetaAdInsightDuplicateArchive[]
@@ -432,6 +433,7 @@ model User {
   creativeAiPromptTemplatesCreated          CreativeAiPromptTemplate[]     @relation("CreativeAiPromptTemplateCreatedBy")
   creativeAiReferenceDocumentsUploaded      CreativeAiReferenceDocument[]  @relation("CreativeAiReferenceDocumentUploadedBy")
   creativeStoreTargetsUpdated               CreativeStoreTarget[]          @relation("CreativeStoreTargetUpdatedBy")
+  creativeAiTargetDefaultsUpdated           CreativeAiTargetDefault[]      @relation("CreativeAiTargetDefaultUpdatedBy")
   creativeEnrollmentReviewsDecided          CreativeEnrollmentReview[]     @relation("CreativeEnrollmentReviewDecidedBy")
   creativeAiPoliciesUpdated                 CreativeAiPolicy[]             @relation("CreativeAiPolicyUpdatedBy")
 
@@ -1933,6 +1935,43 @@ model CreativeStoreTarget {
 
   @@index([tenantId])
   @@map("creative_store_targets")
+}
+
+/// The tenant's fallback creative targets.
+///
+/// A tenant can have well over a hundred stores, and filling the same six
+/// numbers into each one by hand is not a decision, it is data entry. These
+/// are inherited by any store that has not set its own, and the prompt is
+/// told the figures are the tenant default so nobody mistakes them for a
+/// judgement made about that store.
+model CreativeAiTargetDefault {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @unique @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  breakevenCpp Decimal? @db.Decimal(12, 2)
+  cpp          Decimal? @db.Decimal(12, 2)
+  scaleCpp     Decimal? @db.Decimal(12, 2)
+  killCpp      Decimal? @db.Decimal(12, 2)
+
+  arPct      Decimal? @db.Decimal(6, 2)
+  scaleArPct Decimal? @db.Decimal(6, 2)
+  killArPct  Decimal? @db.Decimal(6, 2)
+
+  maxCancellationPct Decimal? @db.Decimal(6, 2)
+  maxRtsPct          Decimal? @db.Decimal(6, 2)
+
+  hookRatePct Decimal? @db.Decimal(6, 2)
+  holdRatePct Decimal? @db.Decimal(6, 2)
+  ctrPct      Decimal? @db.Decimal(6, 2)
+
+  note        String?
+  updatedById String?  @db.Uuid
+  updatedBy   User?    @relation("CreativeAiTargetDefaultUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("creative_ai_target_defaults")
 }
 
 /// Why a creative entered the knowledge base. A knowledge entry is only ever
