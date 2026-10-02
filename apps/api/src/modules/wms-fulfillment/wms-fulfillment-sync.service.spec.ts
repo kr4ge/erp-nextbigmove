@@ -246,3 +246,48 @@ describe('WmsFulfillmentSyncService transient empty-item cancellation recovery',
     expect(tx.pancakeWebhookLogOrder.findFirst).not.toHaveBeenCalled();
   });
 });
+
+describe('WmsFulfillmentSyncService.returnAmendmentBasketUnit', () => {
+  it('only returns a serialized unit owned by the order being amended', async () => {
+    const transactionClient = {
+      $queryRaw: jest.fn<() => Promise<any[]>>().mockResolvedValue([{ id: 'basket-1' }]),
+      wmsFulfillmentOrder: {
+        findFirst: jest.fn<() => Promise<any>>().mockResolvedValue({
+          id: 'order-1',
+          posOrderId: '45484',
+          changeSummary: null,
+          amendments: [{
+            id: 'amendment-1',
+            requiredActions: {
+              return: [{ variationId: 'variation-1', quantity: 1 }],
+            },
+          }],
+        }),
+      },
+      wmsBasketUnit: {
+        findFirst: jest.fn<() => Promise<any>>().mockResolvedValue(null),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback: any) => callback(transactionClient)),
+    };
+    const service = new WmsFulfillmentSyncService(prisma as any, {} as any, {} as any);
+
+    await expect(service.returnAmendmentBasketUnit({
+      tenantId: 'tenant-1',
+      fulfillmentOrderId: 'order-1',
+      basketId: 'basket-1',
+      code: 'SERIAL-1',
+      actorId: 'user-1',
+    })).rejects.toThrow('Scanned unit is not one of the items that must be returned');
+
+    expect(transactionClient.wmsBasketUnit.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        basketId: 'basket-1',
+        fulfillmentOrderId: 'order-1',
+        variationId: { in: ['variation-1'] },
+      }),
+      include: { inventoryUnit: true },
+    });
+  });
+});

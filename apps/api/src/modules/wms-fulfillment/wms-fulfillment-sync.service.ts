@@ -2621,6 +2621,7 @@ export class WmsFulfillmentSyncService {
       const basketUnit = await tx.wmsBasketUnit.findFirst({
         where: {
           basketId: params.basketId,
+          fulfillmentOrderId: order.id,
           status: { in: [...ACTIVE_BASKET_UNIT_STATUSES] },
           variationId: { in: Array.from(requiredVariations) },
           inventoryUnit: {
