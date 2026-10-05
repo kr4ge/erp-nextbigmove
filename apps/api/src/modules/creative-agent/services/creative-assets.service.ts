@@ -29,6 +29,24 @@ const ANALYSIS_STATES = [
   { value: 'NOT_ANALYZED', label: 'Not analyzed yet' },
 ] as const;
 
+/** Enrollment is counted by the Manila business day. No DST, so a fixed offset is exact. */
+const MANILA_OFFSET = '+08:00';
+export function manilaDayStart(dateKey: string): Date {
+  return new Date(`${dateKey}T00:00:00${MANILA_OFFSET}`);
+}
+
+/**
+ * Creatives enrolled inside the window, inclusive of both days. Submission
+ * is the enrollment moment; rows without one (older imports) fall back to
+ * creation, so nothing is silently excluded.
+ */
+export function enrolledWithinWhere(startKey: string, endKey: string): Prisma.CreativeWhereInput {
+  const start = manilaDayStart(startKey);
+  const endExclusive = new Date(manilaDayStart(endKey).getTime() + 86_400_000);
+  const inWindow = { gte: start, lt: endExclusive };
+  return { OR: [{ submittedAt: inWindow }, { submittedAt: null, createdAt: inWindow }] };
+}
+
 /** A two-state picker filters only when exactly one state is chosen. */
 const onlyState = <T extends string>(states: T[] | undefined): T | undefined => (states && states.length === 1 ? states[0] : undefined);
 
@@ -115,6 +133,16 @@ export class CreativeAssetsService {
     const storeIds = storeOptions.defaultStoreId
       ? [storeOptions.defaultStoreId]
       : (query.storeIds ?? (query.storeId ? [query.storeId] : []));
+    // The date range is the enrollment window as well as the performance
+    // window: only creatives enrolled inside it are listed, and their figures
+    // are summed over the same days. A deep link to one creative and the
+    // open-revision queue ignore it; an open request must not hide for being
+    // older than the window.
+    const enrolledWithin = query.creativeId || query.queue === 'REVIEW' ? null : enrolledWithinWhere(range.startKey, range.endKey);
+    const andClauses: Prisma.CreativeWhereInput[] = [
+      ...(query.query ? buildAssetSearchWhere(query.query) : []),
+      ...(enrolledWithin ? [enrolledWithin] : []),
+    ];
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
       ...ownershipWhere,
@@ -132,7 +160,7 @@ export class CreativeAssetsService {
       ...(onlyState(query.linked) === 'UNLINKED' ? { metaAdLinks: { none: {} }, metaAdId: null } : {}),
       ...(onlyState(query.analyzed) === 'ANALYZED' ? { aiRuns: { some: { status: 'COMPLETED' } } } : {}),
       ...(onlyState(query.analyzed) === 'NOT_ANALYZED' ? { aiRuns: { none: { status: 'COMPLETED' } } } : {}),
-      ...(query.query ? { AND: buildAssetSearchWhere(query.query) } : {}),
+      ...(andClauses.length ? { AND: andClauses } : {}),
     };
     const skip = (query.page - 1) * query.pageSize;
     // The review queue reads oldest-waiting first. Tenant-wide readers browsing
@@ -145,7 +173,7 @@ export class CreativeAssetsService {
     const orderBy: Prisma.CreativeOrderByWithRelationInput[] = query.queue === 'REVIEW'
       ? [{ revisionRequestedAt: 'asc' }, { code: 'asc' }]
       : [{ updatedAt: 'desc' }, { code: 'asc' }];
-    const [items, total, stores, creators, statusCounts] = await Promise.all([
+    const [items, total, stores, creators, statusCounts, enrolledCounts] = await Promise.all([
       this.prisma.creative.findMany({
         where,
         skip,
@@ -177,7 +205,21 @@ export class CreativeAssetsService {
         by: ['revisionState'], where: { tenantId: context.tenantId, ...ownershipWhere },
         _count: { _all: true },
       }),
+      // How many creatives each creator enrolled inside the window, for the
+      // Creators picker. The store filter applies; the creator filter does not,
+      // or the other names would read zero the moment one is chosen.
+      this.prisma.creative.groupBy({
+        by: ['createdById'],
+        where: {
+          tenantId: context.tenantId,
+          ...(!canReadAll ? { createdById: context.userId } : {}),
+          ...(storeIds.length ? { storeConfig: { storeId: { in: storeIds } } } : {}),
+          ...enrolledWithinWhere(range.startKey, range.endKey),
+        },
+        _count: { _all: true },
+      }),
     ]);
+    const countByCreator = new Map(enrolledCounts.map((row) => [row.createdById, row._count._all]));
     // Signed read URLs are minted per response; the objects stay private.
     const thumbnailUrls = new Map<string, string | null>();
     await Promise.all(items.map(async (item) => {
@@ -197,7 +239,9 @@ export class CreativeAssetsService {
       filters: {
         stores: stores.stores,
         defaultStoreId: stores.defaultStoreId,
-        creators: creators.map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy) })).sort((a, b) => a.label.localeCompare(b.label)),
+        creators: creators
+          .map(({ createdBy }) => ({ value: createdBy.id, label: this.personName(createdBy), count: countByCreator.get(createdBy.id) ?? 0 }))
+          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
         revisionStates: REVISION_STATES.map((state) => ({ value: state, label: this.humanize(state) })),
         linkStates: LINK_STATES.map((state) => ({ ...state })),
         analysisStates: ANALYSIS_STATES.map((state) => ({ ...state })),

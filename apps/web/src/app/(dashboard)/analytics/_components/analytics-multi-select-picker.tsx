@@ -6,6 +6,8 @@ import { ChevronDown } from 'lucide-react';
 type AnalyticsMultiSelectOption = {
   value: string;
   label: string;
+  /** A quiet figure beside the name, such as a count; not searched. */
+  hint?: string;
 };
 
 type AnalyticsMultiSelectPickerProps = {
@@ -161,6 +163,7 @@ export function AnalyticsMultiSelectPicker({
                   />
                   <span>{option.label}</span>
                 </label>
+                {option.hint ? <span className="ml-auto mr-3 text-xs tabular-nums text-slate-400 dark:text-muted">{option.hint}</span> : null}
                 <button
                   type="button"
                   className="text-xs font-semibold text-primary"

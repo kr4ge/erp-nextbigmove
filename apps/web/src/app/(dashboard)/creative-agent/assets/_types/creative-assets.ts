@@ -84,7 +84,8 @@ export type CreativeAssetsResponse = {
   filters: {
     stores: Array<{ value: string; label: string }>;
     defaultStoreId?: string | null;
-    creators: Array<{ value: string; label: string }>;
+    /** count = creatives that creator enrolled inside the selected date range. */
+    creators: Array<{ value: string; label: string; count?: number }>;
     revisionStates: Array<{ value: CreativeRevisionState; label: string }>;
     linkStates: Array<{ value: 'LINKED' | 'UNLINKED'; label: string }>;
     analysisStates: Array<{ value: 'ANALYZED' | 'NOT_ANALYZED'; label: string }>;

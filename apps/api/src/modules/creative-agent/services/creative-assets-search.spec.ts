@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { buildAssetSearchWhere, codeSpellings } from './creative-assets.service';
+import { buildAssetSearchWhere, codeSpellings, enrolledWithinWhere, manilaDayStart } from './creative-assets.service';
 
 /**
  * People type codes the way they read them, not the way they are stored.
@@ -37,5 +37,25 @@ describe('buildAssetSearchWhere', () => {
 
   it('caps the number of words so a pasted paragraph cannot build a giant query', () => {
     expect(buildAssetSearchWhere('a b c d e f g h i j k')).toHaveLength(8);
+  });
+});
+
+describe('enrolledWithinWhere', () => {
+  it('reads the window as Manila calendar days, inclusive of both ends', () => {
+    const where = enrolledWithinWhere('2026-10-01', '2026-10-01') as { OR: Array<Record<string, { gte?: Date; lt?: Date } | null>> };
+    const submitted = where.OR[0].submittedAt!;
+    // Midnight Manila on 1 Oct is 16:00 UTC on 30 Sep; the day ends where 2 Oct begins.
+    expect(submitted.gte?.toISOString()).toBe('2026-09-30T16:00:00.000Z');
+    expect(submitted.lt?.toISOString()).toBe('2026-10-01T16:00:00.000Z');
+  });
+
+  it('falls back to creation for rows that were never submitted', () => {
+    const where = enrolledWithinWhere('2026-09-06', '2026-10-05') as { OR: Array<Record<string, unknown>> };
+    expect(where.OR[1]).toMatchObject({ submittedAt: null });
+    expect(where.OR[1].createdAt).toEqual(where.OR[0].submittedAt);
+  });
+
+  it('builds a Manila day start without depending on the server timezone', () => {
+    expect(manilaDayStart('2026-01-01').toISOString()).toBe('2025-12-31T16:00:00.000Z');
   });
 });

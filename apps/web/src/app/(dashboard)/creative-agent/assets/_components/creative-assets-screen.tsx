@@ -31,7 +31,7 @@ const filterButtonIdle = 'border-border/60 bg-surface text-foreground hover:bg-b
 const filterButtonActive = 'border-primary/40 bg-primary-soft/40 font-medium text-primary';
 const filterDropdownClass = 'absolute left-0 z-30 mt-1.5 w-64 rounded-lg border border-border bg-surface shadow-lg';
 
-type FilterOption = { value: string; label: string };
+type FilterOption = { value: string; label: string; hint?: string };
 
 /**
  * One filter on the toolbar. It reads as its name while it narrows nothing,
@@ -96,7 +96,11 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
   const { data, params } = controller;
   const isReviewerView = Boolean(data?.permissions.canReadAll && controller.canReview);
   const storeOptions = useMemo(() => data?.filters.stores ?? [], [data?.filters.stores]);
-  const creatorOptions = useMemo(() => data?.filters.creators ?? [], [data?.filters.creators]);
+  // The count beside each creator is how many they enrolled inside the selected dates.
+  const creatorOptions = useMemo(
+    () => (data?.filters.creators ?? []).map((creator) => ({ value: creator.value, label: creator.label, hint: creator.count != null ? String(creator.count) : undefined })),
+    [data?.filters.creators],
+  );
   const linkOptions = useMemo(() => data?.filters.linkStates ?? [], [data?.filters.linkStates]);
   const analysisOptions = useMemo(() => data?.filters.analysisStates ?? [], [data?.filters.analysisStates]);
   const hasActiveFilters = Boolean(controller.searchText.trim()) || params.storeIds.length > 0 || params.creatorIds.length > 0 || params.linked.length > 0 || params.analyzed.length > 0;
@@ -158,7 +162,8 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
             placeholder="Search code, title, product, creator or ad ID"
           />
         </label>
-        {/* Spend and the craft rates are period figures, so the window is a filter, not decoration. */}
+        {/* The window does two jobs: only creatives enrolled inside it are listed,
+            and spend and the craft rates are summed over the same days. */}
         <div className="shrink-0"><VideoRegistryDateRangePicker compact startDate={params.startDate} endDate={params.endDate} onChange={(range) => controller.updateParams(range)} /></div>
         {data?.filters.defaultStoreId
           ? <span className="flex h-9 shrink-0 items-center rounded-lg border border-border/60 bg-background-secondary px-3 text-sm text-muted">{data.filters.stores[0]?.label ?? 'Store'}</span>
