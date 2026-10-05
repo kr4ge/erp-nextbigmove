@@ -141,6 +141,47 @@ describe('WmsFulfillmentSyncService.reconcileCanceledPickingOrderRefs', () => {
   });
 });
 
+describe('WmsFulfillmentSyncService targeted source revisions', () => {
+  it('allows waiting-for-pickup POS updates only for an existing active WMS order', async () => {
+    const prisma = {
+      posOrder: {
+        findMany: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
+      },
+    };
+    const service = new WmsFulfillmentSyncService(prisma as any, {} as any, {} as any);
+    jest.spyOn(service as any, 'syncCanceledPickingOrders').mockResolvedValue({ cleanedOrders: 0 });
+    jest.spyOn(service as any, 'buildTenantGoLiveOrderFilters').mockResolvedValue([{}]);
+
+    await service.syncConfirmedPickingOrders({
+      tenantId: 'tenant-1',
+      storeId: 'store-1',
+      actorId: null,
+      stores: [{ id: 'store-1', tenantId: 'tenant-1', shopId: 'shop-1' }],
+      posOrderRefs: [{ shopId: 'shop-1', posOrderId: '4' }],
+    });
+
+    expect(prisma.posOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({ status: 1 }),
+              expect.objectContaining({
+                status: { in: [12, 9] },
+                wmsFulfillmentOrders: {
+                  some: {
+                    status: { in: expect.arrayContaining(['PACKING', 'PACKED']) },
+                  },
+                },
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    }));
+  });
+});
+
 describe('WmsFulfillmentSyncService transient empty-item cancellation recovery', () => {
   const eligibleOrder = {
     id: 'fulfillment-1',

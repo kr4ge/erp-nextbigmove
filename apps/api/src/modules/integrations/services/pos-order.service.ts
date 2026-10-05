@@ -114,7 +114,14 @@ export function shouldTreatNoProductSnapshotAsVoid(
     return false;
   }
 
-  return status !== 1 && status !== 12;
+  return status !== 1 && status !== 9 && status !== 12;
+}
+
+export function shouldQueueWmsFulfillmentSync(
+  status: number | null | undefined,
+  isVoid: boolean,
+) {
+  return !isVoid && (status === 1 || status === 9 || status === 12);
 }
 
 @Injectable()
@@ -1237,8 +1244,7 @@ export class PosOrderService {
 
         upserted++;
         if (
-          (order.status === 1 || order.status === 12)
-          && !order.isVoid
+          shouldQueueWmsFulfillmentSync(order.status, !!order.isVoid)
           && order.shopId
           && order.posOrderId
           && (

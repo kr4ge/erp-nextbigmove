@@ -61,6 +61,7 @@ type FulfillmentAmendmentPlan = {
 };
 
 const CONFIRMED_POS_ORDER_STATUS = 1;
+const WAITING_FOR_PICKUP_POS_ORDER_STATUS = 9;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
 const AUTO_POS_CANCELLATION_ISSUE_REASON = 'Order was canceled in POS.';
@@ -88,6 +89,10 @@ const ACTIVE_BASKET_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.READY_FOR_PACK,
   WmsFulfillmentOrderStatus.PICKED,
   WmsFulfillmentOrderStatus.PACKING,
+] as const;
+const SOURCE_REVISION_ELIGIBLE_FULFILLMENT_ORDER_STATUSES = [
+  ...ACTIVE_BASKET_ORDER_STATUSES,
+  WmsFulfillmentOrderStatus.PACKED,
 ] as const;
 const AUTO_REALLOCATION_ORDER_STATUSES = [
   WmsFulfillmentOrderStatus.RESTOCKING,
@@ -286,9 +291,6 @@ export class WmsFulfillmentSyncService {
 
     const confirmedOrders = await this.prisma.posOrder.findMany({
       where: {
-        status: refs.length > 0
-          ? { in: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS] }
-          : CONFIRMED_POS_ORDER_STATUS,
         isVoid: false,
         shopId: { in: shopIds },
         tenantId: params.tenantId ? params.tenantId : { in: tenantIds },
@@ -304,6 +306,26 @@ export class WmsFulfillmentSyncService {
                 })),
               }]
             : []),
+          {
+            OR: [
+              { status: CONFIRMED_POS_ORDER_STATUS },
+              {
+                status: {
+                  in: [
+                    WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+                    WAITING_FOR_PICKUP_POS_ORDER_STATUS,
+                  ],
+                },
+                wmsFulfillmentOrders: {
+                  some: {
+                    status: {
+                      in: [...SOURCE_REVISION_ELIGIBLE_FULFILLMENT_ORDER_STATUSES],
+                    },
+                  },
+                },
+              },
+            ],
+          },
         ],
         // Targeted webhook updates must also reconcile orders already being
         // picked or packed. Broad/background syncs keep the old bounded scope.
@@ -410,8 +432,8 @@ export class WmsFulfillmentSyncService {
         });
 
         if (!existing) {
-          // Status 12 is the post-handoff POS state. It is accepted only to
-          // amend an existing WMS order, never to create a new fulfillment.
+          // Post-handoff POS states are accepted only to amend an existing
+          // WMS order, never to create a new fulfillment.
           if (posOrder.status !== CONFIRMED_POS_ORDER_STATUS) {
             return null;
           }

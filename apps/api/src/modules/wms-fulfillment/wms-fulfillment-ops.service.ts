@@ -67,6 +67,7 @@ const FULFILLABLE_UNIT_STATUSES = [
   WmsInventoryUnitStatus.PUTAWAY,
 ] as const;
 const CONFIRMED_POS_ORDER_STATUS = 1;
+const WAITING_FOR_PICKUP_POS_ORDER_STATUS = 9;
 const WAITING_FOR_PRINTING_POS_ORDER_STATUS = 12;
 const CANCELED_POS_ORDER_STATUS = 6;
 const ACTIVE_WMS_TENANT_STATUSES = [TenantStatus.ACTIVE, TenantStatus.TRIAL] as const;
@@ -2238,6 +2239,7 @@ export class WmsFulfillmentOpsService {
         (!isCanceledInPos && order.posOrder?.isVoid)
         || (
           posStatus !== CONFIRMED_POS_ORDER_STATUS
+          && posStatus !== WAITING_FOR_PICKUP_POS_ORDER_STATUS
           && posStatus !== WAITING_FOR_PRINTING_POS_ORDER_STATUS
           && posStatus !== CANCELED_POS_ORDER_STATUS
         )
@@ -2451,7 +2453,11 @@ export class WmsFulfillmentOpsService {
 
     for (const order of selectedReopenOrders) {
       await this.refreshDemandOrderAvailabilityState(tx, order.id, params.now, {
-        allowedPosStatuses: [CONFIRMED_POS_ORDER_STATUS, WAITING_FOR_PRINTING_POS_ORDER_STATUS],
+        allowedPosStatuses: [
+          CONFIRMED_POS_ORDER_STATUS,
+          WAITING_FOR_PICKUP_POS_ORDER_STATUS,
+          WAITING_FOR_PRINTING_POS_ORDER_STATUS,
+        ],
       });
     }
 

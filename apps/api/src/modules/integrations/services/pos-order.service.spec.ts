@@ -1,8 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
-import { shouldTreatNoProductSnapshotAsVoid } from './pos-order.service';
+import {
+  shouldQueueWmsFulfillmentSync,
+  shouldTreatNoProductSnapshotAsVoid,
+} from './pos-order.service';
 
 describe('shouldTreatNoProductSnapshotAsVoid', () => {
-  it.each([1, 12])(
+  it.each([1, 9, 12])(
     'keeps an explicitly empty snapshot fulfillable while POS status is %s',
     (status) => {
       expect(shouldTreatNoProductSnapshotAsVoid(true, status)).toBe(false);
@@ -15,5 +18,19 @@ describe('shouldTreatNoProductSnapshotAsVoid', () => {
 
   it('never changes void state when the snapshot contains a product', () => {
     expect(shouldTreatNoProductSnapshotAsVoid(false, 6)).toBe(false);
+  });
+});
+
+describe('shouldQueueWmsFulfillmentSync', () => {
+  it.each([1, 9, 12])(
+    'queues WMS reconciliation for an active order at POS status %s',
+    (status) => {
+      expect(shouldQueueWmsFulfillmentSync(status, false)).toBe(true);
+    },
+  );
+
+  it('does not queue canceled or void orders', () => {
+    expect(shouldQueueWmsFulfillmentSync(6, false)).toBe(false);
+    expect(shouldQueueWmsFulfillmentSync(9, true)).toBe(false);
   });
 });
