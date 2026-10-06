@@ -299,7 +299,6 @@ export default function UndeliverablesPage() {
     () => ((data?.filters.remarkers ?? []).map((user) => ({
       value: user.user_id,
       label: user.full_name,
-      hint: user.email,
     }))),
     [data?.filters.remarkers],
   );
