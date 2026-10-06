@@ -61,6 +61,7 @@ export default function UndeliverablesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedRemarkedByIds, setSelectedRemarkedByIds] = useState<string[]>([]);
   const [remarkView, setRemarkView] = useState<UndeliverablesRemarkView>('needs_remarks');
   const [failedAtOrder, setFailedAtOrder] = useState<'asc' | 'desc'>('asc');
   const [showStorePicker, setShowStorePicker] = useState(false);
@@ -95,7 +96,7 @@ export default function UndeliverablesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [startDate, endDate, selectedStoreIds, selectedStatuses, searchTerm, remarkView, failedAtOrder]);
+  }, [startDate, endDate, selectedStoreIds, selectedStatuses, selectedRemarkedByIds, searchTerm, remarkView, failedAtOrder]);
 
   useEffect(() => {
     if (!showStorePicker) return;
@@ -149,6 +150,7 @@ export default function UndeliverablesPage() {
         failedAtOrder,
         storeIds: selectedStoreIds,
         statuses: selectedStatuses,
+        remarkedByIds: selectedRemarkedByIds,
         search: searchTerm,
         page,
         limit: PAGE_SIZE,
@@ -160,7 +162,7 @@ export default function UndeliverablesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [canViewUndeliverables, endDate, failedAtOrder, page, remarkView, searchTerm, selectedStatuses, selectedStoreIds, startDate]);
+  }, [canViewUndeliverables, endDate, failedAtOrder, page, remarkView, searchTerm, selectedRemarkedByIds, selectedStatuses, selectedStoreIds, startDate]);
 
   useEffect(() => {
     void loadUndeliverables();
@@ -293,6 +295,14 @@ export default function UndeliverablesPage() {
     })) ?? []),
     [data?.filters.statuses],
   );
+  const remarkerOptions = useMemo(
+    () => ((data?.filters.remarkers ?? []).map((user) => ({
+      value: user.user_id,
+      label: user.full_name,
+      hint: user.email,
+    }))),
+    [data?.filters.remarkers],
+  );
   const filteredStoreOptions = useMemo(() => {
     const keyword = storeSearch.trim().toLowerCase();
     if (!keyword) return storeOptions;
@@ -301,6 +311,7 @@ export default function UndeliverablesPage() {
 
   const isAllStoresMode = selectedStoreIds.length === 0;
   const isAllStatusesMode = selectedStatuses.length === 0;
+  const isAllRemarkersMode = selectedRemarkedByIds.length === 0;
   const remarkViewTabs = useMemo(
     () => [
       { value: 'needs_remarks' as const, label: 'Needs remarks' },
@@ -337,6 +348,19 @@ export default function UndeliverablesPage() {
     }
     return `${selectedStatuses.length} statuses`;
   }, [isAllStatusesMode, selectedStatuses, statusOptions]);
+
+  const selectedRemarkerLabel = useMemo(() => {
+    if (remarkerOptions.length === 0) {
+      return 'No remarking SAs';
+    }
+    if (isAllRemarkersMode) {
+      return 'All remarking SAs';
+    }
+    if (selectedRemarkedByIds.length === 1) {
+      return remarkerOptions.find((option) => option.value === selectedRemarkedByIds[0])?.label ?? '1 SA';
+    }
+    return `${selectedRemarkedByIds.length} SAs`;
+  }, [isAllRemarkersMode, remarkerOptions, selectedRemarkedByIds]);
 
   const undeliverablesDateRangeIsToday = startDate === today && endDate === today;
   const undeliverablesDateRangeButtonLabel = useMemo(() => {
@@ -477,6 +501,28 @@ export default function UndeliverablesPage() {
               className="relative"
               buttonClassName="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-surface dark:text-foreground dark:hover:border-slate-500"
             />
+
+            {remarkView === 'with_remarks' ? (
+              <AnalyticsMultiSelectPicker
+                selectedLabel={selectedRemarkerLabel}
+                selectTitle="Select SAs who remarked"
+                options={remarkerOptions}
+                allChecked={isAllRemarkersMode}
+                isChecked={(value) => selectedRemarkedByIds.includes(value)}
+                onToggleAll={() => setSelectedRemarkedByIds([])}
+                onToggle={(value) =>
+                  setSelectedRemarkedByIds((current) =>
+                    current.includes(value)
+                      ? current.filter((entry) => entry !== value)
+                      : [...current, value],
+                  )
+                }
+                onOnly={(value) => setSelectedRemarkedByIds([value])}
+                onClear={() => setSelectedRemarkedByIds([])}
+                className="relative"
+                buttonClassName="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:border-slate-300 focus:outline-none dark:border-border dark:bg-surface dark:text-foreground dark:hover:border-slate-500"
+              />
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">

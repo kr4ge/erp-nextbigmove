@@ -2018,6 +2018,7 @@ export class OrdersService {
     end_date?: string;
     store_id?: string | string[];
     status?: string | string[];
+    remarked_by_id?: string | string[];
     search?: string;
     view?: string;
     failed_at_order?: string;
@@ -2037,6 +2038,9 @@ export class OrdersService {
     const search = params.search?.trim() || '';
     const statuses = this.parseUndeliverableStatuses(params.status);
     const view = this.parseUndeliverableView(params.view);
+    const selectedRemarkedByIds = view === 'with_remarks'
+      ? this.parseUuidArray(params.remarked_by_id)
+      : [];
     const failedAtOrder: Prisma.SortOrder = params.failed_at_order === 'desc' ? 'desc' : 'asc';
     const undeliverableStartAt = dayjs.tz(`${startDate}T00:00:00`, TIMEZONE).toDate();
     const undeliverableEndAt = dayjs.tz(`${endDate}T23:59:59.999`, TIMEZONE).toDate();
@@ -2075,12 +2079,14 @@ export class OrdersService {
             value: String(status),
             label: UNDELIVERABLE_STATUS_LABELS[status],
           })),
+          remarkers: [],
         },
         selected: {
           start_date: startDate,
           end_date: endDate,
           store_ids: [],
           statuses: statuses.map(String),
+          remarked_by_ids: selectedRemarkedByIds,
           search,
           view,
           failed_at_order: failedAtOrder,
@@ -2146,12 +2152,14 @@ export class OrdersService {
             value: String(status),
             label: UNDELIVERABLE_STATUS_LABELS[status],
           })),
+          remarkers: [],
         },
         selected: {
           start_date: startDate,
           end_date: endDate,
           store_ids: selectedStoreIds,
           statuses: statuses.map(String),
+          remarked_by_ids: selectedRemarkedByIds,
           search,
           view,
           failed_at_order: failedAtOrder,
@@ -2163,7 +2171,7 @@ export class OrdersService {
       };
     }
 
-    const where: Prisma.UndeliverableAttemptWhereInput = {
+    const filterContextWhere: Prisma.UndeliverableAttemptWhereInput = {
       tenantId: access.tenantId,
       ...attemptVisibilityWhere,
       storeId: { in: effectiveStoreIds },
@@ -2180,6 +2188,45 @@ export class OrdersService {
           }
         : {}),
       },
+    };
+
+    const remarkAuthorRows = view === 'with_remarks'
+      ? await this.prisma.undeliverableAttempt.findMany({
+          where: filterContextWhere,
+          select: { remarkedById: true },
+          distinct: ['remarkedById'],
+        })
+      : [];
+    const remarkAuthorIds = remarkAuthorRows
+      .map((row) => row.remarkedById)
+      .filter((value): value is string => !!value);
+    const remarkAuthorUsers = remarkAuthorIds.length > 0
+      ? await this.prisma.user.findMany({
+          where: {
+            tenantId: access.tenantId,
+            id: { in: remarkAuthorIds },
+          },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : [];
+    const filterRemarkers = remarkAuthorUsers
+      .map((user) => ({
+        user_id: user.id,
+        full_name: this.buildUndeliverableUserLabel(user),
+        email: user.email,
+      }))
+      .sort((left, right) => left.full_name.localeCompare(right.full_name));
+
+    const where: Prisma.UndeliverableAttemptWhereInput = {
+      ...filterContextWhere,
+      ...(selectedRemarkedByIds.length > 0
+        ? { remarkedById: { in: selectedRemarkedByIds } }
+        : {}),
     };
 
     const [total, attempts] = await this.prisma.$transaction([
@@ -2362,12 +2409,14 @@ export class OrdersService {
           value: String(status),
           label: UNDELIVERABLE_STATUS_LABELS[status],
         })),
+        remarkers: filterRemarkers,
       },
       selected: {
         start_date: startDate,
         end_date: endDate,
         store_ids: selectedStoreIds,
         statuses: statuses.map(String),
+        remarked_by_ids: selectedRemarkedByIds,
         search,
         view,
         failed_at_order: failedAtOrder,

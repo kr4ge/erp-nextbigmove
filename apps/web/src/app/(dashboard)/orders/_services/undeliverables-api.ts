@@ -34,6 +34,7 @@ export async function fetchUndeliverables(params: {
   failedAtOrder?: 'asc' | 'desc';
   storeIds?: string[];
   statuses?: string[];
+  remarkedByIds?: string[];
   search?: string;
   page?: number;
   limit?: number;
@@ -47,6 +48,9 @@ export async function fetchUndeliverables(params: {
         ...(params.failedAtOrder ? { failed_at_order: params.failedAtOrder } : {}),
         ...(params.storeIds && params.storeIds.length > 0 ? { store_id: params.storeIds } : {}),
         ...(params.statuses && params.statuses.length > 0 ? { status: params.statuses } : {}),
+        ...(params.view === 'with_remarks' && params.remarkedByIds && params.remarkedByIds.length > 0
+          ? { remarked_by_id: params.remarkedByIds }
+          : {}),
         ...(params.search?.trim() ? { search: params.search.trim() } : {}),
         ...(params.page ? { page: params.page } : {}),
         ...(params.limit ? { limit: params.limit } : {}),

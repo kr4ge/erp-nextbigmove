@@ -16,6 +16,9 @@ export class GetUndeliverablesQueryDto {
   status?: string | string[];
 
   @IsOptional()
+  remarked_by_id?: string | string[];
+
+  @IsOptional()
   @IsString()
   search?: string;
 

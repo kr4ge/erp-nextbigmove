@@ -70,6 +70,12 @@ export type UndeliverableStatusFilterOption = {
   label: string;
 };
 
+export type UndeliverableRemarkerFilterOption = {
+  user_id: string;
+  full_name: string;
+  email: string;
+};
+
 export type UndeliverablesResponse = {
   items: UndeliverableRow[];
   pagination: {
@@ -81,12 +87,14 @@ export type UndeliverablesResponse = {
   filters: {
     stores: UndeliverableStoreFilterOption[];
     statuses: UndeliverableStatusFilterOption[];
+    remarkers: UndeliverableRemarkerFilterOption[];
   };
   selected: {
     start_date: string;
     end_date: string;
     store_ids: string[];
     statuses: string[];
+    remarked_by_ids: string[];
     search: string;
     view?: UndeliverablesRemarkView;
     failed_at_order?: 'asc' | 'desc';
