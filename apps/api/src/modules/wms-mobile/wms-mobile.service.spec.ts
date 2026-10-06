@@ -5,10 +5,93 @@ import {
   WmsBasketStatus,
   WmsBasketUnitStatus,
   WmsFulfillmentAssignmentMode,
+  WmsFulfillmentChangeState,
   WmsFulfillmentLineStatus,
   WmsFulfillmentOrderStatus,
 } from '@prisma/client';
 import { WmsMobileService } from './wms-mobile.service';
+
+describe('WmsMobileService packing POS item guard', () => {
+  const service = Object.create(WmsMobileService.prototype) as WmsMobileService;
+  const resolveItemChange = (order: unknown) => (
+    (service as unknown as {
+      resolveFulfillmentOrderItemChange: (input: unknown) => { hasChanged: boolean } | null;
+    }).resolveFulfillmentOrderItemChange(order)
+  );
+
+  const sourceItem = (variationId: string) => ({
+    quantity: 1,
+    variation_id: variationId,
+  });
+  const sourceLine = (
+    variationId: string,
+    sourceQuantityRequired: number,
+    quantityRequired: number,
+    status: WmsFulfillmentLineStatus,
+  ) => ({
+    variationId,
+    sourceQuantityRequired,
+    quantityRequired,
+    status,
+    lineSnapshot: { sourceVariationId: variationId },
+  });
+
+  it('does not mistake an approved substitution for a new POS item change', () => {
+    const order = {
+      status: WmsFulfillmentOrderStatus.PACKING,
+      changeState: WmsFulfillmentChangeState.NONE,
+      changeDetectedAt: null,
+      changeSummary: null,
+      posOrder: {
+        orderSnapshot: {
+          items: [
+            sourceItem('osmanthus'),
+            sourceItem('cherry-blossom'),
+            sourceItem('gardenia'),
+          ],
+        },
+      },
+      lines: [
+        sourceLine('osmanthus', 1, 2, WmsFulfillmentLineStatus.PICKED),
+        sourceLine('cherry-blossom', 1, 0, WmsFulfillmentLineStatus.CANCELED),
+        sourceLine('gardenia', 1, 1, WmsFulfillmentLineStatus.PICKED),
+      ],
+      fulfillmentAdjustments: [{
+        type: 'SUBSTITUTION',
+        sourceVariationId: 'cherry-blossom',
+        substituteVariationId: 'osmanthus',
+        quantity: 1,
+      }],
+    };
+
+    expect(resolveItemChange(order)).toBeNull();
+  });
+
+  it('still detects a genuine difference between POS items and WMS source requirements', () => {
+    const order = {
+      posOrderId: '4',
+      status: WmsFulfillmentOrderStatus.PACKING,
+      changeState: WmsFulfillmentChangeState.NONE,
+      changeDetectedAt: null,
+      changeSummary: null,
+      posOrder: {
+        orderSnapshot: {
+          items: [sourceItem('osmanthus'), sourceItem('gardenia')],
+        },
+      },
+      lines: [
+        sourceLine('osmanthus', 1, 1, WmsFulfillmentLineStatus.PICKED),
+        sourceLine('cherry-blossom', 1, 1, WmsFulfillmentLineStatus.PICKED),
+        sourceLine('gardenia', 1, 1, WmsFulfillmentLineStatus.PICKED),
+      ],
+    };
+
+    expect(resolveItemChange(order)).toEqual(expect.objectContaining({
+      hasChanged: true,
+      requiresAction: true,
+    }));
+  });
+});
 
 describe('WmsMobileService demand packing serial reassignment', () => {
   const service = Object.create(WmsMobileService.prototype) as WmsMobileService;

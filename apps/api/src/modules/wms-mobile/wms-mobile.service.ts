@@ -4704,6 +4704,9 @@ export class WmsMobileService {
           status: true,
           assignmentMode: true,
           totalQuantity: true,
+          changeState: true,
+          changeDetectedAt: true,
+          changeSummary: true,
           posOrder: {
             select: {
               tracking: true,
@@ -4713,16 +4716,13 @@ export class WmsMobileService {
             },
           },
           lines: {
-            where: {
-              status: { not: WmsFulfillmentLineStatus.CANCELED },
-              quantityRequired: { gt: 0 },
-            },
             select: {
               id: true,
               variationId: true,
               productId: true,
               productName: true,
               productDisplayId: true,
+              sourceQuantityRequired: true,
               quantityRequired: true,
               status: true,
               lineSnapshot: true,
@@ -4782,7 +4782,11 @@ export class WmsMobileService {
         throw new BadRequestException(`Unit ${scannedUnit.code} is not in basket ${scopedBasket.barcode}`);
       }
 
-      const matchingLine = scopedOrder.lines.find((line) => (
+      const packableLines = scopedOrder.lines.filter((line) => (
+        line.status !== WmsFulfillmentLineStatus.CANCELED
+        && Math.max(line.quantityRequired, 0) > 0
+      ));
+      const matchingLine = packableLines.find((line) => (
         line.id === basketUnit.fulfillmentLineId
         || line.variationId === basketUnit.variationId
       ));
