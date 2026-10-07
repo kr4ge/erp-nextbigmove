@@ -8,7 +8,9 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { createWriteStream } from 'fs';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 
 type UploadObjectInput = {
   key: string;
@@ -120,6 +122,20 @@ export class ObjectStorageService implements OnModuleInit {
     }), {
       expiresIn: ttlSeconds,
     });
+  }
+
+  /** Stream an object to a local file. For the large media the buffer variant must not hold in memory. */
+  async downloadObjectToFile(key: string, filePath: string) {
+    const client = this.getClient();
+    const response = await client.send(new GetObjectCommand({
+      Bucket: this.getBucketName(),
+      Key: key,
+    }));
+    if (!response.Body) {
+      throw new Error(`Object storage returned an empty body for ${key}`);
+    }
+    await pipeline(response.Body as Readable, createWriteStream(filePath));
+    return { contentType: response.ContentType ?? null, contentLength: response.ContentLength ?? null };
   }
 
   async downloadObjectBuffer(key: string) {

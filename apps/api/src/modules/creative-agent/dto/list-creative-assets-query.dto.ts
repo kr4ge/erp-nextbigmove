@@ -74,6 +74,13 @@ export class ListCreativeAssetsQueryDto {
   @IsIn(['ANALYZED', 'NOT_ANALYZED'], { each: true })
   analyzed?: Array<'ANALYZED' | 'NOT_ANALYZED'>;
 
+  /** Gate verdicts to show, comma-separated. All or none means no filter. */
+  @IsOptional()
+  @Transform(commaList)
+  @IsArray()
+  @IsIn(['APPROVE', 'REVISE', 'REJECT', 'UNREVIEWED'], { each: true })
+  gate?: Array<'APPROVE' | 'REVISE' | 'REJECT' | 'UNREVIEWED'>;
+
   /** Deep-link focus: narrow the list to one creative (e.g. /assets?creative=<uuid>). */
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ExternalLink, ImageIcon, Plus, RotateCcw, Video, X } from "lucide-react";
+import { ChevronDown, ExternalLink, ImageIcon, Plus, RotateCcw, Upload, Video, X } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,7 @@ import {
 import { useCreativeOptions } from "../_hooks/use-creative-options";
 import {
   fetchStoreEnrollmentItems,
+  uploadCreativeSource,
   type StoreEnrollmentItem,
 } from "../_services/video-registry.service";
 import { buildAdName } from "../../assets/_components/copy-code-button";
@@ -67,6 +68,21 @@ const EMPTY_FORM: RegistrationDraftForm = {
 };
 type FormState = RegistrationDraftForm;
 
+const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/x-m4v,video/webm,.mp4,.mov,.m4v,.webm";
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
+const VIDEO_EXTENSIONS = [".mp4", ".mov", ".m4v", ".webm"];
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+const SOURCE_MAX_BYTES = 250 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+function extensionOf(name: string) {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+}
+
 /**
  * One creative in the batch. Only one entry is expanded at a time; the rest
  * collapse to their ad name so a long batch stays readable.
@@ -76,6 +92,8 @@ type Entry = {
   kind: CreativeKind;
   form: FormState;
   error: string | null;
+  /** The creative's own file. Not part of the saved draft: a File cannot survive a refresh. */
+  file: File | null;
 };
 
 let entrySeq = 0;
@@ -84,6 +102,7 @@ const newEntry = (kind: CreativeKind, storeId: string): Entry => ({
   kind,
   form: { ...EMPTY_FORM, storeId },
   error: null,
+  file: null,
 });
 
 const draftEntriesOf = (entries: Entry[]): RegistrationDraftEntry[] =>
@@ -95,6 +114,7 @@ const restoreDraftEntries = (entries: RegistrationDraftEntry[]): Entry[] =>
     kind,
     form: { ...form },
     error: null,
+    file: null,
   }));
 
 /**
@@ -244,8 +264,11 @@ export function RegisterVideoDialog({
 
   const setKind = (id: string, kind: CreativeKind) =>
     updateEntry(id, (entry) => entry.kind === kind ? entry : ({
-      ...entry, kind, form: { ...entry.form, format: "", hookType: "", angle: "", script: "" },
+      ...entry, kind, file: null, form: { ...entry.form, format: "", hookType: "", angle: "", script: "" },
     }));
+
+  const setFile = (id: string, file: File | null) =>
+    updateEntry(id, (entry) => ({ ...entry, error: null, file }));
 
   // ---- derived, per entry ----
   const storeOf = (entry: Entry) => stores.find((store) => store.value === entry.form.storeId) ?? null;
@@ -276,6 +299,13 @@ export function RegisterVideoDialog({
     if (!codeOf(entry, index)) return "Choose a store to mint the code.";
     if (entry.form.mediaUrl && !isValidFacebookPostUrl(entry.form.mediaUrl)) {
       return "Use a valid Facebook post link, such as https://www.facebook.com/.../posts/...";
+    }
+    if (entry.file) {
+      const allowed = entry.kind === "VIDEO" ? VIDEO_EXTENSIONS : IMAGE_EXTENSIONS;
+      if (!allowed.includes(extensionOf(entry.file.name))) {
+        return entry.kind === "VIDEO" ? "This is a video creative. Choose an MP4, MOV, M4V or WebM file." : "This is a static creative. Choose a JPG, PNG or WebP image.";
+      }
+      if (entry.file.size > SOURCE_MAX_BYTES) return "The file must be 250 MB or smaller.";
     }
     return null;
   };
@@ -410,11 +440,12 @@ export function RegisterVideoDialog({
 
     let done = 0;
     let remaining = [...entries];
+    const uploadFailures: string[] = [];
     // Sequential on purpose: codes are minted per store in order, and a
     // failure must stop at a known point rather than half-register a batch.
     for (const entry of [...entries]) {
       try {
-        await onSubmit({
+        const registered = await onSubmit({
           ...entry.form,
           kind: entry.kind,
           submitForApproval: false,
@@ -427,6 +458,15 @@ export function RegisterVideoDialog({
           adId: seed?.adId,
         });
         done += 1;
+        // The file rides with the registration. A failure here is not a
+        // failed registration: the row exists, the file can be attached from Edit.
+        if (entry.file) {
+          try {
+            await uploadCreativeSource(registered.id, entry.file);
+          } catch (uploadError) {
+            uploadFailures.push(`${registered.code}: ${uploadError instanceof Error ? uploadError.message : "the file did not upload."}`);
+          }
+        }
         // Persist immediately after the API confirms the row. A refresh can
         // now recover only unfinished work and cannot retry confirmed rows.
         remaining = remaining.filter((other) => other.id !== entry.id);
@@ -466,6 +506,11 @@ export function RegisterVideoDialog({
     clearRegistrationDraft();
     setSubmitting(false);
     onRegistered?.(done);
+    if (uploadFailures.length) {
+      // Registered, but a file is missing: say which, and leave the dialog open so the message is read.
+      setError(`Registered ${done} creative${done === 1 ? "" : "s"}, but ${uploadFailures.length === 1 ? "one file" : `${uploadFailures.length} files`} did not upload. Attach ${uploadFailures.length === 1 ? "it" : "them"} from Edit. ${uploadFailures.join(" ")}`);
+      return;
+    }
     onClose();
   };
 
@@ -636,6 +681,35 @@ export function RegisterVideoDialog({
                       title={entry.form.title}
                       creator={creatorName}
                       helper="Paste as the Meta ad name; the code inside links the ad back here."
+                    />
+                  </div>
+
+                  <div>
+                    <span className="form-label">{entry.kind === "VIDEO" ? "Video file" : "Image file"}</span>
+                    <label htmlFor={`source-${entry.id}`} className="mt-1.5 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-border bg-surface p-3 transition hover:border-primary/50 hover:bg-primary-soft/40">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary"><Upload className="h-4 w-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-foreground">{entry.file ? entry.file.name : entry.kind === "VIDEO" ? "Choose the video" : "Choose the image"}</span>
+                        <span className="mt-0.5 block text-xs text-muted">
+                          {entry.file
+                            ? `${formatFileSize(entry.file.size)} · held in the ERP until it is sent to Meta`
+                            : entry.kind === "VIDEO"
+                              ? "MP4, MOV, M4V or WebM up to 250 MB. Optional when a Facebook post or Drive link is registered below."
+                              : "JPG, PNG or WebP up to 250 MB. Optional when a Facebook post or Drive link is registered below."}
+                        </span>
+                      </span>
+                      {entry.file ? (
+                        <button type="button" onClick={(event) => { event.preventDefault(); setFile(entry.id, null); }} className="rounded-lg p-1 text-muted hover:bg-secondary/40 hover:text-foreground" aria-label="Remove the file">
+                          <X className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </label>
+                    <input
+                      id={`source-${entry.id}`}
+                      type="file"
+                      accept={entry.kind === "VIDEO" ? VIDEO_ACCEPT : IMAGE_ACCEPT}
+                      className="sr-only"
+                      onChange={(event) => { setFile(entry.id, event.target.files?.[0] ?? null); event.currentTarget.value = ""; }}
                     />
                   </div>
 

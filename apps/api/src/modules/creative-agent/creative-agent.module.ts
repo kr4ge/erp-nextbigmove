@@ -53,15 +53,36 @@ import { CreativeStoreTargetService } from './services/creative-store-target.ser
 import { CreativeEnrollmentReviewService } from './services/creative-enrollment-review.service';
 import { CreativeAiMaintenanceService } from './services/creative-ai-maintenance.service';
 import { CreativeAiProcessor } from './processors/creative-ai.processor';
-import { CREATIVE_AI_QUEUE } from './creative-agent.constants';
+import { CREATIVE_AI_QUEUE, CREATIVE_META_DRAFT_QUEUE } from './creative-agent.constants';
+import { EncryptionService } from '../integrations/services/encryption.service';
+import { CreativeHandoffController } from './creative-handoff.controller';
+import { CreativeStorePublishingController } from './creative-store-publishing.controller';
+import { CreativeSourceMediaService } from './services/creative-source-media.service';
+import { CreativeMetaCredentialsService } from './services/creative-meta-credentials.service';
+import { CreativeStorePublishingService } from './services/creative-store-publishing.service';
+import { CreativeMetaDraftService } from './services/creative-meta-draft.service';
+import { CreativeHandoffService } from './services/creative-handoff.service';
+import { CreativeMediaMaintenanceService } from './services/creative-media-maintenance.service';
+import { CreativeMetaDraftProcessor } from './processors/creative-meta-draft.processor';
 import { CreativeAiEnabledGuard } from './guards/creative-ai-enabled.guard';
 import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
+
+function metaDraftRatePerMinute() {
+  const value = Number(process.env.CREATIVE_META_DRAFT_RATE_PER_MINUTE || '10');
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 10;
+}
 
 @Module({
   imports: [
     CommonServicesModule,
     AiSettingsModule,
     BullModule.registerQueue({ name: CREATIVE_AI_QUEUE }),
+    // Meta drafting: its own queue, rate-limited so a burst of sends drains
+    // over minutes instead of earning the ad account a throttle.
+    BullModule.registerQueue({
+      name: CREATIVE_META_DRAFT_QUEUE,
+      limiter: { max: metaDraftRatePerMinute(), duration: 60_000 },
+    }),
   ],
   controllers: [
     CreativeAiController,
@@ -79,6 +100,8 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     CreativeOptionsController,
     CreativeKnowledgeController,
     CreativeStoreTargetController,
+    CreativeStorePublishingController,
+    CreativeHandoffController,
   ],
   providers: [
     PermissionsGuard,
@@ -115,8 +138,20 @@ import { isCreativeAiEnabled } from './utils/creative-ai-enabled';
     CreativeMediaFetchService,
     CreativeStoreTargetService,
     CreativeEnrollmentReviewService,
+    CreativeSourceMediaService,
+    // The integrations module imports this one, so its encryption helper is
+    // provided here directly rather than by importing the module back.
+    EncryptionService,
+    CreativeMetaCredentialsService,
+    CreativeStorePublishingService,
+    CreativeMetaDraftService,
+    CreativeHandoffService,
     ...(isCreativeAiEnabled() && resolveProcessRole() !== 'api'
       ? [CreativeAiProcessor, CreativeAiMaintenanceService]
+      : []),
+    // Drafting does not need the AI flag: it only needs a worker to run in.
+    ...(resolveProcessRole() !== 'api'
+      ? [CreativeMetaDraftProcessor, CreativeMediaMaintenanceService]
       : []),
   ],
   exports: [CreativeMetaLinkService, CreativeEnrollmentReviewService],

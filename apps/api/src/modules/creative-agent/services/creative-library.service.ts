@@ -515,6 +515,8 @@ export class CreativeLibraryService {
       driveUrl: creative.driveUrl,
       thumbnailIsVideo: creative.thumbnailIsVideo,
       thumbnailObjectKey: creative.thumbnailAsset?.objectKey ?? null,
+      sourceHeld: Boolean(creative.sourceAssetId),
+      mediaExpiresAt: creative.mediaExpiresAt,
       aliases: creative.aliases.map((alias) => alias.alias),
       aliasRecords: creative.aliases,
       revisionState: creative.revisionState,

@@ -7,6 +7,7 @@ import {
   removeCreativeThumbnail,
   transitionCreativeStatus,
   updateVideoRegistryItem,
+  uploadCreativeSource,
   uploadCreativeThumbnail,
 } from '../../video-registry/_services/video-registry.service';
 import type { UpdateVideoRegistryInput } from '../../video-registry/_types/video-registry';
@@ -24,7 +25,7 @@ thirtyDaysAgo.setDate(today.getDate() - 29);
 const DEFAULT_PARAMS: CreativeAssetsParams = {
   startDate: toDateInputValue(thirtyDaysAgo),
   endDate: toDateInputValue(today),
-  query: '', storeIds: [], creatorIds: [], creativeId: '', revisionState: '', linked: [], analyzed: [], queue: '', page: 1, pageSize: 12,
+  query: '', storeIds: [], creatorIds: [], creativeId: '', revisionState: '', linked: [], analyzed: [], gate: [], queue: '', page: 1, pageSize: 12,
 };
 
 const REVISION_STATE_VALUES = ['NONE', 'NEEDS_REVISION', 'RESOLVED'];
@@ -73,7 +74,12 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     setError(null);
     try {
       const result = await fetchCreativeAssets(params);
-      if (seq === requestSeq.current) setData(result);
+      if (seq === requestSeq.current) {
+        setData(result);
+        // The open review dialog shows the row it was opened on; refresh it in
+        // place so a gate verdict or a send shows without closing and reopening.
+        setSelected((current) => (current ? result.items.find((item) => item.id === current.id) ?? current : current));
+      }
     }
     catch (loadError) {
       if (seq === requestSeq.current) setError(loadError instanceof Error ? loadError.message : 'Unable to load Creative Assets.');
@@ -82,6 +88,15 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   }, [params]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A gate review is one model call; while any row's is in flight, refresh
+  // quietly so its verdict appears without anyone reloading.
+  const gateRunning = Boolean(data?.items.some((item) => item.gateInProgress));
+  useEffect(() => {
+    if (!gateRunning) return;
+    const timer = window.setInterval(() => { void load(true); }, 8000);
+    return () => window.clearInterval(timer);
+  }, [gateRunning, load]);
 
   // Advertising reviewers land on their approval queue by default — applied
   // once when permissions resolve and only if no explicit filter was deep-linked.
@@ -171,6 +186,18 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
     }
   }, [load]);
 
+  const uploadSource = useCallback(async (id: string, file: File) => {
+    setIsMutating(true);
+    try {
+      const result = await uploadCreativeSource(id, file);
+      setEditing((current) => (current && current.id === id ? { ...current, sourceHeld: result.sourceHeld, mediaExpiresAt: result.mediaExpiresAt } : current));
+      await load(true);
+      return result;
+    } finally {
+      setIsMutating(false);
+    }
+  }, [load]);
+
   const removeThumbnail = useCallback(async (id: string) => {
     setIsMutating(true);
     try {
@@ -183,5 +210,5 @@ export function useCreativeAssetsController(initial: CreativeAssetsInitialFilter
   }, [load]);
 
   const updateParams = useCallback((patch: Partial<CreativeAssetsParams>) => setParams((current) => ({ ...current, ...patch, page: patch.page ?? 1 })), []);
-  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, canUseAi, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, uploadThumbnail, removeThumbnail, retry: load };
+  return { params, searchText, data, view, selected, editing, comments, isLoading, isLoadingComments, isMutating, error, canReview, canUseAi, setSearchText, setView, setSelected, setEditing, updateParams, openAsset, openEdit, addComment, transition, updateCreative, uploadThumbnail, uploadSource, removeThumbnail, retry: load, refresh: () => load(true) };
 }

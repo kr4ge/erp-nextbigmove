@@ -100,6 +100,9 @@ export type VideoRegistryItem = {
   /** Signed URL for the cached post cover, when captured. */
   thumbnailUrl?: string | null;
   thumbnailIsVideo?: boolean;
+  /** The creative's own file is held in storage, until this date, for the Meta draft. */
+  sourceHeld?: boolean;
+  mediaExpiresAt?: string | null;
   aliases: string[];
   aliasRecords?: Array<{ id: string; alias: string; createdAt: string }>;
   revisionState: CreativeRevisionState;

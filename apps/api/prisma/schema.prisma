@@ -119,6 +119,10 @@ model Tenant {
   creativeAiTargetDefault             CreativeAiTargetDefault?
   creativeEnrollmentReviews           CreativeEnrollmentReview[]
   creativeAiPolicy                    CreativeAiPolicy?
+  creativeStorePublishingProfiles     CreativeStorePublishingProfile[]
+  creativeStoreProductDestinations    CreativeStoreProductDestination[]
+  creativeMetaDraftBatches            CreativeMetaDraftBatch[]
+  creativeMetaDrafts                  CreativeMetaDraft[]
   metaAdInsightDuplicateArchives      MetaAdInsightDuplicateArchive[]
   wmsFulfillmentAmendments            WmsFulfillmentAmendment[]
   wmsFulfillmentAdjustments           WmsFulfillmentAdjustment[]
@@ -436,6 +440,8 @@ model User {
   creativeAiTargetDefaultsUpdated           CreativeAiTargetDefault[]      @relation("CreativeAiTargetDefaultUpdatedBy")
   creativeEnrollmentReviewsDecided          CreativeEnrollmentReview[]     @relation("CreativeEnrollmentReviewDecidedBy")
   creativeAiPoliciesUpdated                 CreativeAiPolicy[]             @relation("CreativeAiPolicyUpdatedBy")
+  creativeStorePublishingProfilesUpdated    CreativeStorePublishingProfile[] @relation("CreativeStorePublishingProfileUpdatedBy")
+  creativeMetaDraftBatchesRequested         CreativeMetaDraftBatch[]       @relation("CreativeMetaDraftBatchRequestedBy")
 
   @@unique([email, tenantId])
   @@index([tenantId])
@@ -719,6 +725,7 @@ enum MediaAssetKind {
   WMS_PACKING_PROOF_IMAGE
   CREATIVE_THUMBNAIL_IMAGE
   CREATIVE_AI_FRAME_IMAGE
+  CREATIVE_SOURCE_MEDIA
 }
 
 enum WmsPackingProofSource {
@@ -1411,6 +1418,8 @@ model CreativeStoreConfig {
   knowledgeEntries  CreativeKnowledgeEntry[]
   enrollmentReviews CreativeEnrollmentReview[]
   referenceDocuments CreativeAiReferenceDocument[]
+  publishingProfile  CreativeStorePublishingProfile?
+  metaDraftBatches   CreativeMetaDraftBatch[]
 
 
   @@unique([tenantId, codePrefix])
@@ -1478,6 +1487,16 @@ model Creative {
   thumbnailSourceUrl  String?
   thumbnailCapturedAt DateTime?
   thumbnailIsVideo    Boolean     @default(false)
+
+  // The file itself, copied into object storage at its first analysis and
+  // held until the draft worker has handed it to Meta. Frames, transcript and
+  // the analysis outlive it; only the bytes are released. A file nobody sends
+  // is swept once mediaExpiresAt passes.
+  sourceAssetId       String?     @db.Uuid
+  sourceAsset         MediaAsset? @relation("CreativeSourceAsset", fields: [sourceAssetId], references: [id], onDelete: SetNull)
+  mediaCapturedAt     DateTime?
+  mediaReleasedAt     DateTime?
+  mediaExpiresAt      DateTime?
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
@@ -1489,6 +1508,7 @@ model Creative {
   aiRuns            CreativeAiRun[]
   knowledgeEntries  CreativeKnowledgeEntry[]
   enrollmentReviews CreativeEnrollmentReview[]
+  metaDrafts        CreativeMetaDraft[]
 
   @@unique([tenantId, code])
   @@unique([storeConfigId, codeNumber])
@@ -1500,6 +1520,7 @@ model Creative {
   @@index([tenantId, revisionState])
   @@index([tenantId, performanceStatus])
   @@index([tenantId, metaAdId])
+  @@index([tenantId, mediaExpiresAt])
   @@map("creatives")
 }
 
@@ -1673,6 +1694,8 @@ enum CreativeAiSourceType {
   LOCAL_UPLOAD
   GOOGLE_DRIVE
   FACEBOOK_POST
+  /// The file held in object storage since enrollment.
+  STORED_SOURCE
 }
 
 enum CreativeAiProvider {
@@ -2149,6 +2172,150 @@ model CreativeEnrollmentReview {
   @@map("creative_enrollment_reviews")
 }
 
+/// Where a store's creatives are launched: the ad account, the brand's page and
+/// Instagram account, the budget a test starts at. Set once per store. The draft
+/// worker refuses to run while any of it is missing, and names the gap.
+model CreativeStorePublishingProfile {
+  id            String              @id @default(uuid()) @db.Uuid
+  tenantId      String              @db.Uuid
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId String              @unique @db.Uuid
+  storeConfig   CreativeStoreConfig @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+
+  /// Meta's account_id without the act_ prefix; one of the tenant's connected ad accounts.
+  metaAdAccountId    String?
+  facebookPageId     String?
+  facebookPageName   String?
+  instagramAccountId String?
+  instagramUsername  String?
+  /// The daily campaign budget a test starts at, in the ad account's currency.
+  defaultDailyBudget Decimal? @db.Decimal(12, 2)
+  /// ISO country codes the ad set targets. The SOP says the Philippines.
+  countries          String[] @default(["PH"])
+  /// Where "tomorrow, midnight" is measured for the start time.
+  timezone           String   @default("Asia/Manila")
+
+  updatedById String? @db.Uuid
+  updatedBy   User?   @relation("CreativeStorePublishingProfileUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products CreativeStoreProductDestination[]
+
+  @@index([tenantId])
+  @@map("creative_store_publishing_profiles")
+}
+
+/// One product's pixel and landing page. The SOP is explicit that a product
+/// must optimise on its own pixel, so this is per product, matched on
+/// Creative.posCustomId.
+model CreativeStoreProductDestination {
+  id        String                         @id @default(uuid()) @db.Uuid
+  tenantId  String                         @db.Uuid
+  tenant    Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profileId String                         @db.Uuid
+  profile   CreativeStorePublishingProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  posCustomId    String
+  posProductName String?
+  pixelId        String
+  landingPageUrl String
+  displayLink    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([profileId, posCustomId])
+  @@index([tenantId])
+  @@map("creative_store_product_destinations")
+}
+
+enum CreativeMetaDraftStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// One campaign with one ad set and one to three ads, created paused in Meta.
+/// Every Meta id is written the moment it exists, so a retry resumes where the
+/// last attempt stopped instead of creating a second campaign.
+model CreativeMetaDraftBatch {
+  id            String                  @id @default(uuid()) @db.Uuid
+  tenantId      String                  @db.Uuid
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storeConfigId String                  @db.Uuid
+  storeConfig   CreativeStoreConfig     @relation(fields: [storeConfigId], references: [id], onDelete: Cascade)
+  status        CreativeMetaDraftStatus @default(QUEUED)
+
+  metaAdAccountId    String
+  currency           String?
+  campaignName       String
+  adSetName          String
+  dailyBudget        Decimal  @db.Decimal(12, 2)
+  startTime          DateTime
+  pixelId            String
+  landingPageUrl     String
+  displayLink        String?
+  facebookPageId     String
+  instagramAccountId String?
+  countries          String[] @default(["PH"])
+  /// The settings the SOP fixes, frozen at send time so a later reader sees what went out.
+  settingsSnapshot   Json?
+
+  metaCampaignId String?
+  metaAdSetId    String?
+  errorMessage   String?
+  attempts       Int     @default(0)
+  queueJobId     String?
+
+  requestedById String? @db.Uuid
+  requestedBy   User?   @relation("CreativeMetaDraftBatchRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  drafts CreativeMetaDraft[]
+
+  @@index([tenantId, storeConfigId, createdAt])
+  @@index([tenantId, status])
+  @@map("creative_meta_draft_batches")
+}
+
+/// One ad in a batch: the creative's media in Meta, then the ad creative, then the ad.
+model CreativeMetaDraft {
+  id         String                  @id @default(uuid()) @db.Uuid
+  tenantId   String                  @db.Uuid
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batchId    String                  @db.Uuid
+  batch      CreativeMetaDraftBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  creativeId String                  @db.Uuid
+  creative   Creative                @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  status     CreativeMetaDraftStatus @default(QUEUED)
+
+  /// Registry code first, then the maker's name, so the ad links back to its row.
+  adName      String
+  primaryText String?
+  headline    String?
+
+  metaVideoId       String?
+  metaImageHash     String?
+  metaThumbnailHash String?
+  metaCreativeId    String?
+  metaAdId          String?
+
+  errorMessage    String?
+  attempts        Int       @default(0)
+  mediaUploadedAt DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([batchId, creativeId])
+  @@index([tenantId, creativeId, createdAt])
+  @@map("creative_meta_drafts")
+}
+
 // ============================================================================
 // POS ORDER MODEL (Tenant-scoped)
 // ============================================================================
@@ -2547,6 +2714,7 @@ model MediaAsset {
   wmsPackingProof                  WmsPackingProof?           @relation("WmsPackingProofAsset")
   creativeThumbnails               Creative[]                 @relation("CreativeThumbnailAsset")
   creativeAiRunFrames              CreativeAiRunFrame[]       @relation("CreativeAiRunFrameAsset")
+  creativeSources                  Creative[]                 @relation("CreativeSourceAsset")
 
   @@unique([bucket, objectKey])
   @@index([tenantId, kind])

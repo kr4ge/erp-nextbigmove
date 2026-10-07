@@ -72,6 +72,19 @@ export async function uploadCreativeThumbnail(id: string, file: File): Promise<T
     })).data;
   } catch (error) { throw apiError(error, 'Unable to upload this thumbnail.'); }
 }
+export type SourceUploadResult = { sourceHeld: boolean; mediaCapturedAt: string | null; mediaExpiresAt: string | null };
+/** The creative's own file, held in storage until it is sent to Meta. Videos can be large; no client timeout. */
+export async function uploadCreativeSource(id: string, file: File, onProgress?: (fraction: number) => void): Promise<SourceUploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    return (await apiClient.post<SourceUploadResult>(`/creative-agent/creatives/${id}/source`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+      onUploadProgress: (event) => { if (onProgress && event.total) onProgress(event.loaded / event.total); },
+    })).data;
+  } catch (error) { throw apiError(error, 'Unable to upload this file.'); }
+}
 export async function removeCreativeThumbnail(id: string): Promise<{ thumbnailUrl: null; thumbnailIsVideo: false }> {
   try { return (await apiClient.delete(`/creative-agent/creatives/${id}/thumbnail`)).data; }
   catch (error) { throw apiError(error, 'Unable to remove this thumbnail.'); }

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Building2, DollarSign, RefreshCcw, Tags, Target } from 'lucide-react';
+import { Building2, DollarSign, Megaphone, RefreshCcw, Tags, Target } from 'lucide-react';
 
 interface StoreDetailQuickActionsProps {
   isSyncingProducts: boolean;
@@ -10,6 +10,8 @@ interface StoreDetailQuickActionsProps {
   onSetInitialOffer: () => void;
   /** Opens the creative targets modal; omitted when the viewer cannot read them. */
   onSetCreativeTargets?: () => void;
+  /** Opens the Meta publishing profile; omitted when the viewer cannot read it. */
+  onSetMetaPublishing?: () => void;
   onSyncProducts: () => void;
   onSyncTags: () => void;
   onSyncWarehouses: () => void;
@@ -21,6 +23,7 @@ export function StoreDetailQuickActions({
   isSyncingWarehouses,
   onSetInitialOffer,
   onSetCreativeTargets,
+  onSetMetaPublishing,
   onSyncProducts,
   onSyncTags,
   onSyncWarehouses,
@@ -41,6 +44,17 @@ export function StoreDetailQuickActions({
             className='btn-icon'
           >
             Creative Targets
+          </Button>
+        ) : null}
+        {onSetMetaPublishing ? (
+          <Button
+            variant="outline"
+            size="sm"
+            iconLeft={<Megaphone className="h-3.5 w-3.5" />}
+            onClick={onSetMetaPublishing}
+            className='btn-icon'
+          >
+            Meta Publishing
           </Button>
         ) : null}
         <Button

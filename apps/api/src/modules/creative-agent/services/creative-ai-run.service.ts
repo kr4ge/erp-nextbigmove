@@ -27,6 +27,7 @@ import { CreativeAccessService } from './creative-access.service';
 import { CreativeAiPolicyService } from './creative-ai-policy.service';
 import { CreativeMediaFetchService } from './creative-media-fetch.service';
 import { CreativeAiFrameService } from './creative-ai-frame.service';
+import { CreativeSourceMediaService } from './creative-source-media.service';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
 
@@ -47,6 +48,7 @@ export class CreativeAiRunService {
     private readonly policy: CreativeAiPolicyService,
     private readonly mediaFetch: CreativeMediaFetchService,
     private readonly frameStore: CreativeAiFrameService,
+    private readonly sourceMedia: CreativeSourceMediaService,
     @InjectQueue(CREATIVE_AI_QUEUE) private readonly queue: Queue<CreativeAiAnalyzeJobData>,
   ) {}
 
@@ -64,20 +66,27 @@ export class CreativeAiRunService {
       const settings = await this.policy.resolveRunSettings(context, dto);
       const creative = await this.prisma.creative.findFirst({
         where: { id: dto.creativeId, tenantId: context.tenantId },
-        select: { id: true, createdById: true, title: true, code: true, kind: true, mediaUrl: true, driveUrl: true },
+        select: { id: true, createdById: true, title: true, code: true, kind: true, mediaUrl: true, driveUrl: true, sourceAssetId: true },
       });
       if (!creative) throw new NotFoundException('Creative not found');
       if (!this.access.canReadAll(context) && creative.createdById !== context.userId) {
         throw new ForbiddenException('You can only analyze your own creatives');
       }
 
-      // Where the file comes from, in the advertiser's order: an upload when
-      // one was given, otherwise the Facebook post, then the Google Drive
-      // link. Only a creative with neither link needs the upload.
+      // Where the file comes from, in order: an upload given now, the file
+      // held since enrollment, the Facebook post, then the Google Drive link.
+      // Only a creative with none of these needs the upload.
       let source: { path: string; originalname: string; mimetype: string; size: number };
       let sourceType: CreativeAiSourceType = 'LOCAL_UPLOAD';
+      const held = !video?.path && creative.sourceAssetId
+        ? await this.sourceMedia.stageHeldSource(context.tenantId, creative.id, this.uploadTmpDir())
+        : null;
       if (video?.path) {
         source = video;
+      } else if (held) {
+        fetchedPath = held.path;
+        source = held;
+        sourceType = 'STORED_SOURCE';
       } else {
         const fetched = await this.mediaFetch.resolveForAnalysis({
           kind: creative.kind,
@@ -449,6 +458,10 @@ export class CreativeAiRunService {
 
   private dateOnly(value: Date | string) {
     return new Date(value).toISOString().slice(0, 10);
+  }
+
+  private uploadTmpDir() {
+    return resolve(process.env.CREATIVE_AI_UPLOAD_TMP_DIR || join(process.cwd(), 'tmp', 'creative-ai-uploads'));
   }
 
   private workspaceRoot() {

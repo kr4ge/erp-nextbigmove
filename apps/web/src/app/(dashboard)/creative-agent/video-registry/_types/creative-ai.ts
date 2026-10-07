@@ -144,6 +144,8 @@ export type CreativeAiTarget = {
   /** The registered links the analysis can fetch from when nothing is uploaded. */
   mediaUrl?: string | null;
   driveUrl?: string | null;
+  /** The file held since enrollment; read before any link. */
+  sourceHeld?: boolean;
 };
 
 export type CreativeAiFinding = {

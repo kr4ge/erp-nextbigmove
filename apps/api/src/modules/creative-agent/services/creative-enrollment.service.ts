@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { unlink } from 'fs/promises';
 import { CreativeMetaLinkSource, CreativeStrategySource, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { UploadedImageFile } from '../../../common/services/media-assets.service';
@@ -17,9 +19,11 @@ import { EnrollCreativeDto, EnrollUnregisteredCreativeDto } from '../dto/enroll-
 import { UpdateCreativeDto } from '../dto/update-creative.dto';
 import type { CreativeActor } from '../types/creative-actor.type';
 import { preferCanonicalMetaAdIdentity } from '../utils/meta-ad-identity';
+import { assertSourceMatchesKind } from '../utils/creative-source-kind';
 import { CreativeAccessService } from './creative-access.service';
 import { CreativeStoreService } from './creative-store.service';
 import { CreativeThumbnailService } from './creative-thumbnail.service';
+import { CreativeSourceMediaService } from './creative-source-media.service';
 
 const CREATIVE_DETAIL_INCLUDE = {
   storeConfig: { select: { id: true, storeId: true, storeNameSnapshot: true, shopIdSnapshot: true, codePrefix: true, active: true } },
@@ -47,6 +51,7 @@ export class CreativeEnrollmentService {
     private readonly access: CreativeAccessService,
     private readonly stores: CreativeStoreService,
     private readonly thumbnails: CreativeThumbnailService,
+    private readonly sourceMedia: CreativeSourceMediaService,
   ) {}
 
   async enroll(actor: CreativeActor, dto: EnrollCreativeDto) {
@@ -183,6 +188,54 @@ export class CreativeEnrollmentService {
       throw new ForbiddenException('You can only view your own creatives');
     }
     return this.serializeCreative(creative);
+  }
+
+  /**
+   * Hold the creative's own file. Enrollment is where it should arrive, so the
+   * analysis reads it and the Meta draft uploads it without anyone fetching a
+   * link or uploading twice. Attaching again replaces what is held.
+   */
+  async attachSource(
+    actor: CreativeActor,
+    creativeId: string,
+    file?: { path: string; originalname: string; mimetype: string; size: number },
+  ) {
+    const context = await this.access.resolve(actor);
+    try {
+      const existing = await this.prisma.creative.findFirst({
+        where: { id: creativeId, tenantId: context.tenantId },
+        select: { id: true, kind: true, createdById: true, code: true },
+      });
+      if (!existing) throw new NotFoundException('Creative not found');
+      if (!this.access.canEdit(context, existing.createdById)) {
+        throw new ForbiddenException('You cannot edit this creative');
+      }
+      if (!file?.path) throw new BadRequestException('Choose the video or image file to attach.');
+      assertSourceMatchesKind(existing.kind, file.originalname);
+
+      const outcome = await this.sourceMedia.captureFile({
+        tenantId: context.tenantId,
+        creativeId: existing.id,
+        sourcePath: file.path,
+        contentType: file.mimetype,
+        fileName: file.originalname,
+      });
+      if (outcome === 'SKIPPED') {
+        throw new BadRequestException('Object storage is not configured, so the file cannot be held.');
+      }
+      const creative = await this.prisma.creative.findUniqueOrThrow({
+        where: { id: existing.id },
+        select: { sourceAssetId: true, mediaCapturedAt: true, mediaExpiresAt: true },
+      });
+      return {
+        sourceHeld: Boolean(creative.sourceAssetId),
+        mediaCapturedAt: creative.mediaCapturedAt,
+        mediaExpiresAt: creative.mediaExpiresAt,
+        outcome,
+      };
+    } finally {
+      if (file?.path) await unlink(file.path).catch(() => undefined);
+    }
   }
 
   async update(actor: CreativeActor, creativeId: string, dto: UpdateCreativeDto) {
@@ -495,6 +548,7 @@ export class CreativeEnrollmentService {
       },
       aliases: creative.aliases.map((alias) => alias.alias),
       aliasRecords: creative.aliases,
+      sourceHeld: Boolean(creative.sourceAssetId),
       storeConfig: undefined,
       createdBy: undefined,
     };

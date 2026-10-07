@@ -99,3 +99,20 @@ export const PERFORMANCE_TRANSITIONS: Record<string, readonly string[]> = {
   FATIGUED: ['LIVE', 'RETIRED'],
   RETIRED: [],
 };
+
+/**
+ * Meta draft automation has its own queue. It calls an external API with rate
+ * limits, and a slow Meta must never hold up an analysis, a gate review, or
+ * anything else the ERP runs. Two jobs at a time, rate-limited per minute.
+ */
+export const CREATIVE_META_DRAFT_QUEUE = 'creative-meta-draft';
+/** Upload one creative's media to the ad account and record the Meta id. */
+export const CREATIVE_META_DRAFT_UPLOAD_JOB = 'creative-meta-draft.upload';
+/** Create the campaign, ad set and ads for a batch whose media is all in Meta. */
+export const CREATIVE_META_DRAFT_BUILD_JOB = 'creative-meta-draft.build';
+/** Delete the held source once Meta confirms it has its own copy. */
+export const CREATIVE_META_DRAFT_RELEASE_JOB = 'creative-meta-draft.release';
+
+export type CreativeMetaDraftUploadJobData = { tenantId: string; draftId: string };
+export type CreativeMetaDraftBuildJobData = { tenantId: string; batchId: string };
+export type CreativeMetaDraftReleaseJobData = { tenantId: string; creativeId: string };

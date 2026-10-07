@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { ImageIcon, ImagePlus, Save, Trash2, Upload, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,13 +24,19 @@ export type EditableCreative = {
   notes: string | null;
   thumbnailUrl?: string | null;
   thumbnailIsVideo?: boolean;
+  /** The creative's own file is held in storage, until this date. */
+  sourceHeld?: boolean;
+  mediaExpiresAt?: string | null;
 };
 
 /** PNG/JPEG/WebP only — matches what the upload pipeline accepts server-side. */
 const THUMBNAIL_ACCEPT = "image/png,image/jpeg,image/webp";
 const THUMBNAIL_MAX_BYTES = 8 * 1024 * 1024;
+const VIDEO_ACCEPT = "video/mp4,video/quicktime,video/x-m4v,video/webm,.mp4,.mov,.m4v,.webm";
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
 type ThumbnailResult = { thumbnailUrl: string; thumbnailIsVideo: boolean };
+type SourceResult = { sourceHeld: boolean; mediaCapturedAt: string | null; mediaExpiresAt: string | null };
 
 type Props = {
   item: EditableCreative | null;
@@ -40,6 +46,8 @@ type Props = {
   /** A creative with no usable auto-captured cover can still get one, pasted in directly. */
   onUploadThumbnail: (id: string, file: File) => Promise<ThumbnailResult>;
   onRemoveThumbnail: (id: string) => Promise<void>;
+  /** Attach or replace the creative's own file, held until it is sent to Meta. */
+  onUploadSource?: (id: string, file: File) => Promise<SourceResult>;
 };
 
 function toForm(item: EditableCreative): UpdateVideoRegistryInput {
@@ -56,7 +64,7 @@ function toForm(item: EditableCreative): UpdateVideoRegistryInput {
   };
 }
 
-export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadThumbnail, onRemoveThumbnail }: Props) {
+export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadThumbnail, onRemoveThumbnail, onUploadSource }: Props) {
   const [form, setForm] = useState<UpdateVideoRegistryInput | null>(null);
   const { options: creativeOptions, addOption } = useCreativeOptions(form !== null);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +72,9 @@ export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadTh
   const [isThumbnailBusy, setIsThumbnailBusy] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const sourceInputRef = useRef<HTMLInputElement>(null);
+  const [isSourceBusy, setIsSourceBusy] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
 
   // Keyed on id, not the whole item: a thumbnail upload replaces `item` with a
   // fresh reference (new thumbnailUrl) so the preview updates, but re-running
@@ -128,6 +139,21 @@ export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadTh
       hookType: nextKind === "VIDEO" ? current.hookType : "",
       script: nextKind === "VIDEO" ? current.script : "",
     } : current);
+  };
+
+  const handleSourceFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.currentTarget.value = "";
+    if (!file || !item || !onUploadSource) return;
+    setSourceError(null);
+    setIsSourceBusy(true);
+    try {
+      await onUploadSource(item.id, file);
+    } catch (uploadError) {
+      setSourceError(uploadError instanceof Error ? uploadError.message : "Unable to upload this file.");
+    } finally {
+      setIsSourceBusy(false);
+    }
   };
 
   const pickThumbnail = () => thumbnailInputRef.current?.click();
@@ -251,6 +277,23 @@ export function EditCreativeDialog({ item, isSaving, onClose, onSave, onUploadTh
                 <input ref={thumbnailInputRef} type="file" accept={THUMBNAIL_ACCEPT} className="hidden" onChange={handleThumbnailFile} />
               </div>
             </div>
+            {onUploadSource ? (
+              <div className="mb-4">
+                <span className="form-label">Creative file</span>
+                <div className="mt-1.5 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-border p-3">
+                  <p className="min-w-0 flex-1 text-xs text-muted">
+                    {item.sourceHeld
+                      ? <>Held in the ERP{item.mediaExpiresAt ? ` until ${new Date(item.mediaExpiresAt).toLocaleDateString("en-PH")}` : ""}. Every analysis reads it, and the Meta draft uploads it.</>
+                      : "Not held. The analysis will fetch the Facebook post or Drive link instead, and the creative cannot be sent to Meta until a file is held."}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" loading={isSourceBusy} iconLeft={<Upload className="h-3.5 w-3.5" />} onClick={() => sourceInputRef.current?.click()}>
+                    {item.sourceHeld ? "Replace file" : "Upload file"}
+                  </Button>
+                  <input ref={sourceInputRef} type="file" accept={form.kind === "VIDEO" ? VIDEO_ACCEPT : IMAGE_ACCEPT} className="hidden" onChange={(event) => void handleSourceFile(event)} />
+                </div>
+                {sourceError ? <p className="mt-1 text-xs text-destructive" role="alert">{sourceError}</p> : null}
+              </div>
+            ) : null}
             <div className="mb-4">
               <span className="form-label">Creative type</span>
               <div className="mt-1.5 inline-flex rounded-lg border border-border p-0.5" role="radiogroup" aria-label="Creative type">

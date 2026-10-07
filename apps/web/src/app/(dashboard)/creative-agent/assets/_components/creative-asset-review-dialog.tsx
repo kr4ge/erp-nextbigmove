@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ExternalLink, MessageSquare, Pencil, Send, Sparkles } from 'lucide-react';
+import { ExternalLink, Megaphone, MessageSquare, Pencil, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RegistryStatusPill } from '../../video-registry/_components/registry-status-pill';
 import { isValidFacebookPostUrl } from '../../video-registry/_utils/facebook-post-url';
 import { getGoogleDrivePreviewUrl } from '../../video-registry/_utils/google-drive-url';
 import { CopyCodeButton } from './copy-code-button';
+import { GatePill } from './gate-pill';
+import { adsManagerUrl } from '../_types/meta-launch';
 import type { CreativeAsset, CreativeAssetComment } from '../_types/creative-assets';
 
-export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, isSaving, showPerformanceLink = false, canReview = false, canAnalyze = false, onClose, onComment, onTransition, onEdit, onAnalyze }: {
+export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, isSaving, showPerformanceLink = false, canReview = false, canAnalyze = false, canRunGate = false, canOverride = false, canSend = false, onClose, onComment, onTransition, onEdit, onAnalyze, onRunGate, onOverride, onSend }: {
   asset: CreativeAsset | null;
   comments: CreativeAssetComment[];
   isLoadingComments: boolean;
@@ -20,16 +22,51 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
   /** Backend requires creative_agent.review for every non-maker QC transition. */
   canReview?: boolean;
   canAnalyze?: boolean;
+  /** The launch side: run the gate, rule on it, send the paused draft. */
+  canRunGate?: boolean;
+  canOverride?: boolean;
+  canSend?: boolean;
   onClose: () => void;
   onComment: (message: string) => Promise<void>;
   onTransition: (status: string, reason?: string) => Promise<void>;
   onEdit: (asset: CreativeAsset) => void;
   onAnalyze: (asset: CreativeAsset) => void;
+  onRunGate?: (asset: CreativeAsset) => Promise<void>;
+  onOverride?: (asset: CreativeAsset) => void;
+  onSend?: (asset: CreativeAsset) => void;
 }) {
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setFeedback(''); setError(null); }, [asset?.id]);
+  const [gateBusy, setGateBusy] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  useEffect(() => { setFeedback(''); setError(null); setLaunchError(null); }, [asset?.id]);
   if (!asset) return null;
+
+  const runGate = async () => {
+    if (!onRunGate) return;
+    setGateBusy(true);
+    setLaunchError(null);
+    try { await onRunGate(asset); }
+    catch (gateError) { setLaunchError(gateError instanceof Error ? gateError.message : 'Unable to request a gate review.'); }
+    finally { setGateBusy(false); }
+  };
+  const gateText = asset.gateInProgress
+    ? 'Running. Takes a minute or two; this updates itself.'
+    : asset.gate
+      ? `${asset.gate.outcome === 'OVERRIDDEN' ? 'Overridden by a person' : asset.gate.outcome === 'ACCEPTED' ? 'Accepted' : 'Awaiting a person'}${asset.gate.confidence != null ? ` · ${asset.gate.confidence}% confidence` : ''}${asset.gate.shadow ? ' · shadow mode' : ''}`
+      : asset.aiAnalyzed ? 'Not run yet.' : 'Needs an AI analysis first; the gate judges how the creative is built.';
+  const draftText = !asset.draft
+    ? 'Not sent.'
+    : asset.draft.status === 'COMPLETED'
+      ? `Drafted, paused, in "${asset.draft.campaignName}".`
+      : asset.draft.status === 'FAILED'
+        ? 'The last send failed.'
+        : `Sending as "${asset.draft.campaignName}"…`;
+  const fileText = asset.sourceHeld
+    ? `Held${asset.mediaExpiresAt ? ` until ${new Date(asset.mediaExpiresAt).toLocaleDateString('en-PH')}` : ''}.`
+    : asset.draft?.status === 'COMPLETED' ? 'In Meta.' : 'Not held. Attach it from Edit, or re-run the analysis.';
+  const showLaunch = canRunGate || canOverride || canSend || asset.gate || asset.draft;
+  const canSendNow = canSend && asset.sendable;
 
   const sendFeedback = async () => {
     if (!feedback.trim()) return setError('Write feedback before sending.');
@@ -77,6 +114,29 @@ export function CreativeAssetReviewDialog({ asset, comments, isLoadingComments, 
                 <p className="mt-1 text-sm text-muted">Compare the {asset.kind === 'VIDEO' ? 'video' : 'image'}&apos;s visual execution with linked Meta spend and reconciled order results.</p>
               </div>
               <Button type="button" size="sm" className="shrink-0" iconLeft={<Sparkles className="h-4 w-4" />} onClick={() => onAnalyze(asset)}>Analyze creative</Button>
+            </div>
+          ) : null}
+          {showLaunch ? (
+            <div className="mt-5 rounded-xl border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 font-semibold text-foreground"><Megaphone className="h-4 w-4 text-primary" /> Meta launch</p>
+                <GatePill asset={asset} />
+              </div>
+              <dl className="mt-3 grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
+                <dt className="text-muted">Gate</dt><dd className="text-foreground">{gateText}</dd>
+                <dt className="text-muted">File</dt><dd className="text-foreground">{fileText}</dd>
+                <dt className="text-muted">Meta</dt><dd className="text-foreground">{draftText}</dd>
+              </dl>
+              {asset.gate?.decisionNotes ? <p className="mt-2 rounded-lg bg-background-secondary px-3 py-2 text-xs text-muted">{asset.gate.decisionNotes}</p> : null}
+              {asset.draft?.errorMessage ? <p className="mt-2 rounded-lg bg-destructive-soft px-3 py-2 text-xs text-destructive">{asset.draft.errorMessage}</p> : null}
+              {launchError ? <p className="mt-2 text-xs text-destructive" role="alert">{launchError}</p> : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {canRunGate && !asset.gate && !asset.gateInProgress && asset.aiAnalyzed ? <Button type="button" size="sm" variant="outline" loading={gateBusy} onClick={() => void runGate()}>Run gate</Button> : null}
+                {canOverride && asset.gate && asset.gate.outcome === 'PENDING' ? <Button type="button" size="sm" variant="outline" onClick={() => onOverride?.(asset)}>{asset.gate.decision === 'APPROVE' ? 'Block' : 'Override'}</Button> : null}
+                {canSendNow ? <Button type="button" size="sm" iconLeft={<Send className="h-4 w-4" />} onClick={() => onSend?.(asset)}>Send to Meta</Button> : null}
+                {asset.draft ? <a href={adsManagerUrl(asset.draft.adAccountId, asset.draft.metaCampaignId)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">Ads Manager <ExternalLink className="h-3 w-3" /></a> : null}
+              </div>
+              {canSend && !asset.sendable && asset.gate && !asset.draft ? <p className="mt-2 text-xs text-muted">{asset.gate.decision === 'APPROVE' ? 'A person blocked this, so it will not be sent.' : 'Override the gate with a note to make this sendable.'}</p> : null}
             </div>
           ) : null}
           <dl className="mt-5 grid gap-3 rounded-xl bg-background-secondary p-4 sm:grid-cols-2">

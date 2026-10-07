@@ -23,6 +23,7 @@ import { StoreOrdersTab } from './_components/store-orders-tab';
 import { useStoreDetailController } from './_hooks/use-store-detail-controller';
 import { usePermissions } from '@/hooks/use-permissions';
 import { StoreCreativeTargetsModal } from './_components/store-creative-targets-modal';
+import { StoreMetaPublishingModal } from './_components/store-meta-publishing-modal';
 
 function formatCurrency(value: number) {
   return `PHP ${value.toLocaleString('en-US', {
@@ -104,6 +105,9 @@ export default function StoreDetailPage() {
   const canEditCreativeTargets = permissionList.includes('creative_agent.performance.manage');
   const canReadCreativeTargets = permissionList.some((permission) => ['creative_agent.read', 'creative_agent.read_all', 'creative_agent.ai.use', 'creative_agent.ai.manage'].includes(permission));
   const [creativeTargetsOpen, setCreativeTargetsOpen] = useState(false);
+  const canEditMetaPublishing = permissionList.some((permission) => ['creative_agent.performance.manage', 'creative_agent.stores.manage'].includes(permission));
+  const canReadMetaPublishing = canReadCreativeTargets || permissionList.some((permission) => ['creative_agent.review', 'creative_agent.stores.manage'].includes(permission));
+  const [metaPublishingOpen, setMetaPublishingOpen] = useState(false);
   const router = useRouter();
   const params = useParams();
   const storeId = params?.id as string;
@@ -264,6 +268,7 @@ export default function StoreDetailPage() {
             isSyncingWarehouses={isSyncingWarehouses}
             onSetInitialOffer={() => setInitialOfferModalOpen(true)}
             onSetCreativeTargets={canReadCreativeTargets ? () => setCreativeTargetsOpen(true) : undefined}
+            onSetMetaPublishing={canReadMetaPublishing ? () => setMetaPublishingOpen(true) : undefined}
             onSyncProducts={handleSyncProducts}
             onSyncTags={handleSyncTags}
             onSyncWarehouses={handleSyncWarehouses}
@@ -312,6 +317,12 @@ export default function StoreDetailPage() {
         posStoreId={String(params?.id ?? '')}
         canEdit={canEditCreativeTargets}
         onClose={() => setCreativeTargetsOpen(false)}
+      />
+      <StoreMetaPublishingModal
+        isOpen={metaPublishingOpen}
+        posStoreId={String(params?.id ?? '')}
+        canEdit={canEditMetaPublishing}
+        onClose={() => setMetaPublishingOpen(false)}
       />
       <StoreInitialOfferModal
         isOpen={initialOfferModalOpen}

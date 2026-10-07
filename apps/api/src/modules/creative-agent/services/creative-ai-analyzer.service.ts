@@ -8,6 +8,7 @@ import { ClaudeboxClientService, CreativeAiRunCancelledError, CreativeAiRunLimit
 import { CreativeAiContextService } from './creative-ai-context.service';
 import { CreativeAiMediaService } from './creative-ai-media.service';
 import { CreativeAiFrameService } from './creative-ai-frame.service';
+import { CreativeSourceMediaService } from './creative-source-media.service';
 import { verifyAnalysis } from '../utils/creative-ai-verify';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
@@ -37,6 +38,7 @@ export class CreativeAiAnalyzerService {
     private readonly claudebox: ClaudeboxClientService,
     private readonly promptContext: CreativePromptContextService,
     private readonly frameStore: CreativeAiFrameService,
+    private readonly sourceMedia: CreativeSourceMediaService,
   ) {}
 
   async analyze(tenantId: string, runId: string, options: { finalAttempt?: boolean } = {}) {
@@ -52,6 +54,9 @@ export class CreativeAiAnalyzerService {
         requestedById: true,
         creativeId: true,
         sourcePath: true,
+        sourceContentType: true,
+        sourceFileName: true,
+        mediaHash: true,
         status: true,
         provider: true,
         model: true,
@@ -100,7 +105,7 @@ export class CreativeAiAnalyzerService {
         });
         await this.requireSource(sourcePath);
         mediaManifest = await this.media.preprocess(workspace, sourcePath, run.creative.kind);
-        await this.discardSourceVideo(sourcePath);
+        await this.keepSource(run, sourcePath);
       }
       // Scene thumbnails leave the workspace now, before the model runs, so
       // the storyboard exists even for a run that later fails or is cancelled.
@@ -393,8 +398,36 @@ export class CreativeAiAnalyzerService {
   }
 
   /**
-   * The source video is only needed to extract frames. Its SHA-256 stays on
-   * the run, so remove the file unless the operator asked to keep it.
+   * The source outlives the run now: it is copied into object storage so the
+   * draft worker can hand it to Meta later, and only then removed from the
+   * workspace. A capture that fails, or storage that is not configured, leaves
+   * the file where it is rather than losing the only copy.
+   */
+  private async keepSource(
+    run: { tenantId: string; creativeId: string; sourceContentType: string | null; sourceFileName: string | null; mediaHash: string | null },
+    sourcePath: string,
+  ) {
+    try {
+      const outcome = await this.sourceMedia.captureFromRun({
+        tenantId: run.tenantId,
+        creativeId: run.creativeId,
+        sourcePath,
+        contentType: run.sourceContentType,
+        fileName: run.sourceFileName,
+        sha256: run.mediaHash,
+      });
+      if (outcome === 'SKIPPED') return;
+    } catch (error) {
+      this.logger.warn(`Could not hold the source for creative ${run.creativeId}; leaving it in the workspace: ${this.errorMessage(error)}`);
+      return;
+    }
+    await this.discardSourceVideo(sourcePath);
+  }
+
+  /**
+   * The workspace copy is only needed to extract frames. Its SHA-256 stays on
+   * the run and the durable copy is in object storage, so remove the file
+   * unless the operator asked to keep it for debugging.
    */
   private async discardSourceVideo(sourcePath: string) {
     if (process.env.CREATIVE_AI_RETAIN_SOURCE_VIDEO?.trim().toLowerCase() === 'true') return;

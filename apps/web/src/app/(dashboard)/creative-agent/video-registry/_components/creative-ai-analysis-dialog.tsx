@@ -526,6 +526,8 @@ function EmptyResult() {
 function SourceHint({ item, hasFile }: { item: CreativeAiTarget; hasFile: boolean }) {
   const text = hasFile
     ? 'The uploaded file will be analyzed.'
+    : item.sourceHeld
+      ? 'No file chosen: the file held since enrollment will be analyzed.'
     : item.mediaUrl
       ? 'No file chosen: the video or image will be downloaded from the Facebook post.'
       : item.driveUrl

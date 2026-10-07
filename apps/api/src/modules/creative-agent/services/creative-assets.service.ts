@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CreativeKind, CreativeRevisionState, Prisma } from '@prisma/client';
+import { CreativeEnrollmentDecision, CreativeEnrollmentReviewOutcome, CreativeKind, CreativeMetaDraftStatus, CreativeRevisionState, Prisma } from '@prisma/client';
 import { buildAdNameCreatorLabels } from '../../../common/utils/ad-name-creator';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CREATIVE_AGENT_PERMISSIONS } from '../creative-agent.constants';
@@ -45,6 +45,43 @@ export function enrolledWithinWhere(startKey: string, endKey: string): Prisma.Cr
   const endExclusive = new Date(manilaDayStart(endKey).getTime() + 86_400_000);
   const inWindow = { gte: start, lt: endExclusive };
   return { OR: [{ submittedAt: inWindow }, { submittedAt: null, createdAt: inWindow }] };
+}
+
+const GATE_STATES = [
+  { value: 'APPROVE', label: 'Gate: approve' },
+  { value: 'REVISE', label: 'Gate: revise' },
+  { value: 'REJECT', label: 'Gate: reject' },
+  { value: 'UNREVIEWED', label: 'No gate yet' },
+] as const;
+type GateState = (typeof GATE_STATES)[number]['value'];
+
+/**
+ * Which gate verdicts to show. The pill on a row is its latest completed
+ * review; the filter matches any completed review with that verdict, which
+ * is the same thing unless a creative was gated twice with different results.
+ */
+function gateWhere(states: GateState[] | undefined): Prisma.CreativeWhereInput | null {
+  const chosen = Array.from(new Set(states ?? []));
+  if (chosen.length === 0 || chosen.length === GATE_STATES.length) return null;
+  const clauses = chosen.map<Prisma.CreativeWhereInput>((state) => (state === 'UNREVIEWED'
+    ? { enrollmentReviews: { none: { status: 'COMPLETED' } } }
+    : { enrollmentReviews: { some: { status: 'COMPLETED', decision: state } } }));
+  return clauses.length === 1 ? clauses[0] : { OR: clauses };
+}
+
+/**
+ * Whether Send to Meta is possible without a person first overriding the
+ * gate: an Approve nobody blocked, or a Revise/Reject somebody overrode.
+ */
+function sendableFrom(
+  review: { decision: CreativeEnrollmentDecision | null; outcome: CreativeEnrollmentReviewOutcome } | null,
+  revisionState: CreativeRevisionState,
+  performanceStatus: string,
+): boolean {
+  if (!review) return false;
+  const approvedAndKept = review.decision === CreativeEnrollmentDecision.APPROVE && review.outcome !== CreativeEnrollmentReviewOutcome.OVERRIDDEN;
+  const overriddenInFavour = review.decision !== CreativeEnrollmentDecision.APPROVE && review.outcome === CreativeEnrollmentReviewOutcome.OVERRIDDEN;
+  return (approvedAndKept || overriddenInFavour) && revisionState !== CreativeRevisionState.NEEDS_REVISION && performanceStatus !== 'RETIRED';
 }
 
 /** A two-state picker filters only when exactly one state is chosen. */
@@ -139,9 +176,11 @@ export class CreativeAssetsService {
     // open-revision queue ignore it; an open request must not hide for being
     // older than the window.
     const enrolledWithin = query.creativeId || query.queue === 'REVIEW' ? null : enrolledWithinWhere(range.startKey, range.endKey);
+    const gate = gateWhere(query.gate);
     const andClauses: Prisma.CreativeWhereInput[] = [
       ...(query.query ? buildAssetSearchWhere(query.query) : []),
       ...(enrolledWithin ? [enrolledWithin] : []),
+      ...(gate ? [gate] : []),
     ];
     const where: Prisma.CreativeWhereInput = {
       tenantId: context.tenantId,
@@ -181,18 +220,30 @@ export class CreativeAssetsService {
         orderBy,
         select: {
           id: true, code: true, title: true, kind: true, mediaUrl: true, driveUrl: true, format: true, hookType: true, angle: true,
+          sourceAssetId: true, mediaExpiresAt: true,
           posCustomId: true,
           script: true, notes: true, revisionState: true, performanceStatus: true, createdById: true,
           revisionRequestedAt: true, revisionResolvedAt: true,
           submittedAt: true, approvedAt: true, createdAt: true, updatedAt: true, metaAdId: true,
           thumbnailIsVideo: true,
           thumbnailAsset: { select: { objectKey: true, contentType: true } },
-          storeConfig: { select: { storeId: true, storeNameSnapshot: true } },
+          storeConfig: { select: { id: true, storeId: true, storeNameSnapshot: true } },
           createdBy: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } },
           reviewComments: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
           metaAdLinks: { select: { adId: true }, orderBy: { linkedAt: 'asc' } },
           aiRuns: { where: { status: 'COMPLETED' }, orderBy: { completedAt: 'desc' }, take: 1, select: { completedAt: true, analysisMode: true } },
-          _count: { select: { reviewComments: true } },
+          enrollmentReviews: {
+            where: { status: 'COMPLETED' }, orderBy: { createdAt: 'desc' }, take: 1,
+            select: { id: true, decision: true, outcome: true, confidence: true, shadow: true, completedAt: true, decisionNotes: true },
+          },
+          metaDrafts: {
+            orderBy: { createdAt: 'desc' }, take: 1,
+            select: {
+              status: true, metaAdId: true, completedAt: true, errorMessage: true,
+              batch: { select: { id: true, campaignName: true, metaCampaignId: true, metaAdAccountId: true } },
+            },
+          },
+          _count: { select: { reviewComments: true, enrollmentReviews: { where: { status: { in: ['QUEUED', 'RUNNING'] } } } } },
         },
       }),
       this.prisma.creative.count({ where }),
@@ -230,10 +281,15 @@ export class CreativeAssetsService {
 
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     return {
-      permissions: { canReadAll },
+      permissions: {
+        canReadAll,
+        canSend: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.PERFORMANCE_MANAGE),
+        canRunGate: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.AI_USE),
+        canOverride: this.access.has(context, CREATIVE_AGENT_PERMISSIONS.REVIEW),
+      },
       selected: {
         startDate: range.startKey, endDate: range.endKey,
-        query: query.query ?? '', storeIds, creatorIds, linked: query.linked ?? [], analyzed: query.analyzed ?? [],
+        query: query.query ?? '', storeIds, creatorIds, linked: query.linked ?? [], analyzed: query.analyzed ?? [], gate: query.gate ?? [],
         revisionState: query.revisionState ?? '', queue: query.queue ?? '', page: query.page, pageSize: query.pageSize,
       },
       filters: {
@@ -245,6 +301,7 @@ export class CreativeAssetsService {
         revisionStates: REVISION_STATES.map((state) => ({ value: state, label: this.humanize(state) })),
         linkStates: LINK_STATES.map((state) => ({ ...state })),
         analysisStates: ANALYSIS_STATES.map((state) => ({ ...state })),
+        gateStates: GATE_STATES.map((state) => ({ ...state })),
       },
       summary: Object.fromEntries(REVISION_STATES.map((state) => [state, statusCounts.find((row) => row.revisionState === state)?._count._all ?? 0])),
       items: items.map((item) => {
@@ -257,7 +314,7 @@ export class CreativeAssetsService {
           revisionState: item.revisionState, performanceStatus: item.performanceStatus,
           revisionRequestedAt: item.revisionRequestedAt, revisionResolvedAt: item.revisionResolvedAt,
           creator: { id: item.createdBy.id, name: this.personName(item.createdBy), adName: creatorLabels.get(item.createdBy.id) ?? this.personName(item.createdBy), avatar: item.createdBy.avatar },
-          store: { id: item.storeConfig.storeId, name: item.storeConfig.storeNameSnapshot },
+          store: { id: item.storeConfig.storeId, configId: item.storeConfig.id, name: item.storeConfig.storeNameSnapshot },
           isOwnSubmission: item.createdById === context.userId,
           commentCount: item._count.reviewComments,
           lastCommentAt: item.reviewComments[0]?.createdAt ?? null,
@@ -266,8 +323,38 @@ export class CreativeAssetsService {
           aiAnalyzed: item.aiRuns.length > 0,
           aiAnalyzedAt: item.aiRuns[0]?.completedAt ?? null,
           aiAnalysisMode: item.aiRuns[0]?.analysisMode ?? null,
+          // The launch side of the same creative: what the gate said, whether a
+          // gate is running, and where the Meta draft stands.
+          gate: item.enrollmentReviews[0]
+            ? {
+                reviewId: item.enrollmentReviews[0].id,
+                decision: item.enrollmentReviews[0].decision,
+                outcome: item.enrollmentReviews[0].outcome,
+                confidence: item.enrollmentReviews[0].confidence,
+                shadow: item.enrollmentReviews[0].shadow,
+                completedAt: item.enrollmentReviews[0].completedAt,
+                decisionNotes: item.enrollmentReviews[0].decisionNotes,
+              }
+            : null,
+          gateInProgress: item._count.enrollmentReviews > 0,
+          draft: item.metaDrafts[0]
+            ? {
+                batchId: item.metaDrafts[0].batch.id,
+                status: item.metaDrafts[0].status,
+                campaignName: item.metaDrafts[0].batch.campaignName,
+                metaAdId: item.metaDrafts[0].metaAdId,
+                metaCampaignId: item.metaDrafts[0].batch.metaCampaignId,
+                adAccountId: item.metaDrafts[0].batch.metaAdAccountId,
+                completedAt: item.metaDrafts[0].completedAt,
+                errorMessage: item.metaDrafts[0].errorMessage,
+              }
+            : null,
+          sendable: sendableFrom(item.enrollmentReviews[0] ?? null, item.revisionState, item.performanceStatus)
+            && !(item.metaDrafts[0] && item.metaDrafts[0].status !== CreativeMetaDraftStatus.FAILED),
           thumbnailUrl: thumbnailUrls.get(item.id) ?? null,
           thumbnailIsVideo: item.thumbnailIsVideo,
+          sourceHeld: Boolean(item.sourceAssetId),
+          mediaExpiresAt: item.mediaExpiresAt,
           metrics: this.serializeMetrics(item.kind, metricsByCreative.get(item.id)),
           submittedAt: item.submittedAt, approvedAt: item.approvedAt, createdAt: item.createdAt, updatedAt: item.updatedAt,
         };

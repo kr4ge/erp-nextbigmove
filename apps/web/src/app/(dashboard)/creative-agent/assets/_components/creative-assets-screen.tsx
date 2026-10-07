@@ -15,6 +15,11 @@ import { CreativeAssetReviewDialog } from './creative-asset-review-dialog';
 import { CreativeAssetsGrid } from './creative-assets-grid';
 import { CreativeAssetsTable } from './creative-assets-table';
 import { UnlinkedAdsPanel } from './unlinked-ads-panel';
+import { DraftBatchesPanel } from './draft-batches-panel';
+import { OverrideGateDialog } from './override-gate-dialog';
+import { SendToMetaDialog } from './send-to-meta-dialog';
+import { requestEnrollmentReview } from '../../knowledge-base/_services/creative-knowledge.service';
+import type { SendCandidate } from '../_types/meta-launch';
 
 /**
  * Toggling one entry when "All" is on means everything except that one, so
@@ -103,11 +108,25 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
   );
   const linkOptions = useMemo(() => data?.filters.linkStates ?? [], [data?.filters.linkStates]);
   const analysisOptions = useMemo(() => data?.filters.analysisStates ?? [], [data?.filters.analysisStates]);
-  const hasActiveFilters = Boolean(controller.searchText.trim()) || params.storeIds.length > 0 || params.creatorIds.length > 0 || params.linked.length > 0 || params.analyzed.length > 0;
+  const gateOptions = useMemo(() => data?.filters.gateStates ?? [], [data?.filters.gateStates]);
+  const hasActiveFilters = Boolean(controller.searchText.trim()) || params.storeIds.length > 0 || params.creatorIds.length > 0 || params.linked.length > 0 || params.analyzed.length > 0 || params.gate.length > 0;
   const clearFilters = () => {
     controller.setSearchText('');
-    controller.updateParams({ query: '', storeIds: [], creatorIds: [], linked: [], analyzed: [] });
+    controller.updateParams({ query: '', storeIds: [], creatorIds: [], linked: [], analyzed: [], gate: [] });
   };
+  // The launch side lives in the same dialog as review; these open from it.
+  const [sendTarget, setSendTarget] = useState<CreativeAsset | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<CreativeAsset | null>(null);
+  const [batchesKey, setBatchesKey] = useState(0);
+  const runGate = async (asset: CreativeAsset) => {
+    await requestEnrollmentReview({ creativeId: asset.id });
+    addToast('success', `Gate review queued for ${asset.code}. It takes a minute or two; the verdict appears on its own.`);
+    await controller.refresh();
+  };
+  const toCandidate = (asset: CreativeAsset): SendCandidate => ({
+    id: asset.id, code: asset.code, title: asset.title, kind: asset.kind,
+    storeConfigId: asset.store.configId, productCustomId: asset.customId, productName: null,
+  });
   const [analysisTarget, setAnalysisTarget] = useState<CreativeAsset | null>(null);
   const analysisDateRange = useMemo(() => {
     const end = new Date();
@@ -174,6 +193,7 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
         {/* The revision-state filter is parked for now; a deep link with ?revisionState= still narrows the list. */}
         <AssetFilter name="Meta link" title="Meta link" noun="states" options={linkOptions} selected={params.linked} onChange={(linked) => controller.updateParams({ linked: linked as typeof params.linked })} />
         <AssetFilter name="AI analysis" title="AI analysis" noun="states" options={analysisOptions} selected={params.analyzed} onChange={(analyzed) => controller.updateParams({ analyzed: analyzed as typeof params.analyzed })} />
+        <AssetFilter name="Gate" title="Gate" noun="verdicts" options={gateOptions} selected={params.gate} onChange={(gate) => controller.updateParams({ gate: gate as typeof params.gate })} />
         {hasActiveFilters
           ? <button type="button" onClick={clearFilters} className="shrink-0 px-1 text-xs font-medium text-muted transition hover:text-foreground">Clear</button>
           : null}
@@ -185,6 +205,15 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
       {controller.error ? <div className="m-4 rounded-xl border border-destructive/30 bg-destructive-soft p-5 text-center"><AlertTriangle className="mx-auto h-6 w-6 text-destructive" /><p className="mt-2 font-semibold text-foreground">Assets could not load</p><p className="mt-1 text-sm text-muted">{controller.error}</p><button type="button" className="btn btn-sm btn-outline mt-3" onClick={() => void controller.retry()}>Try again</button></div> : controller.isLoading && !data ? <div className="p-16 text-center text-sm text-muted">Loading your assets…</div> : data?.items.length ? controller.view === 'tiles' ? <CreativeAssetsGrid items={data.items} onReview={(item) => void controller.openAsset(item)} /> : <CreativeAssetsTable items={data.items} onReview={(item) => void controller.openAsset(item)} /> : <div className="p-16 text-center"><Inbox className="mx-auto h-8 w-8 text-muted" /><p className="mt-3 font-semibold text-foreground">No assets in this stage</p><p className="mt-1 text-sm text-muted">Your enrolled creatives will appear here automatically.</p></div>}
       {data ? <RegistryPagination {...data.pagination} onPageChange={(page) => controller.updateParams({ page })} /> : null}
     </section>
+    {isReviewerView ? (
+      <section className="panel mt-6">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+          <h3 className="text-sm font-semibold text-foreground">Recent sends to Meta</h3>
+          <span className="text-xs text-muted">Automation ends at the paused draft. Review and publish in Ads Manager.</span>
+        </div>
+        <DraftBatchesPanel storeId="" canSend={Boolean(data?.permissions.canSend)} refreshKey={batchesKey} />
+      </section>
+    ) : null}
     <CreativeAssetReviewDialog
       asset={controller.selected}
       comments={controller.comments}
@@ -193,6 +222,12 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
       showPerformanceLink={isReviewerView}
       canReview={controller.canReview}
       canAnalyze={controller.canUseAi}
+      canRunGate={Boolean(data?.permissions.canRunGate) && controller.canUseAi}
+      canOverride={Boolean(data?.permissions.canOverride)}
+      canSend={Boolean(data?.permissions.canSend)}
+      onRunGate={runGate}
+      onOverride={(asset) => setOverrideTarget(asset)}
+      onSend={(asset) => setSendTarget(asset)}
       onClose={() => controller.setSelected(null)}
       onComment={addComment}
       onTransition={transition}
@@ -214,7 +249,31 @@ export function CreativeAssetsScreen({ initialQuery = '', initialCreativeId, ini
       onClose={() => controller.setEditing(null)}
       onSave={updateCreative}
       onUploadThumbnail={controller.uploadThumbnail}
+      onUploadSource={controller.uploadSource}
       onRemoveThumbnail={controller.removeThumbnail}
     />
+    {sendTarget ? (
+      <SendToMetaDialog
+        candidates={[toCandidate(sendTarget)]}
+        onClose={() => setSendTarget(null)}
+        onSent={(batch) => {
+          setSendTarget(null);
+          setBatchesKey((key) => key + 1);
+          addToast('success', `Sending ${batch.drafts.length} ad${batch.drafts.length === 1 ? '' : 's'} to Meta as "${batch.campaignName}". It appears paused in Ads Manager when done.`);
+          void controller.refresh();
+        }}
+      />
+    ) : null}
+    {overrideTarget ? (
+      <OverrideGateDialog
+        row={{ id: overrideTarget.id, code: overrideTarget.code, gate: overrideTarget.gate ? { reviewId: overrideTarget.gate.reviewId, decision: overrideTarget.gate.decision } : null }}
+        onClose={() => setOverrideTarget(null)}
+        onDone={() => {
+          setOverrideTarget(null);
+          addToast('success', 'Override recorded.');
+          void controller.refresh();
+        }}
+      />
+    ) : null}
   </div>;
 }

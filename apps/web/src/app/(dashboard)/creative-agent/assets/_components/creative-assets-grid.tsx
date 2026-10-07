@@ -6,6 +6,7 @@ import { DriveThumbnail } from '../../video-registry/_components/drive-thumbnail
 import { RegistryStatusPill } from '../../video-registry/_components/registry-status-pill';
 import { formatCompactCurrency, formatRate } from '../../video-registry/_utils/video-registry-formatters';
 import { CopyCodeButton } from './copy-code-button';
+import { GatePill } from './gate-pill';
 import type { CreativeAsset } from '../_types/creative-assets';
 
 export function CreativeAssetsGrid({ items, onReview }: { items: CreativeAsset[]; onReview: (asset: CreativeAsset) => void }) {
@@ -18,7 +19,7 @@ export function CreativeAssetsGrid({ items, onReview }: { items: CreativeAsset[]
           <Button size="sm" variant="ghost" iconLeft={<MessageSquare className="h-4 w-4" />} onClick={() => onReview(item)}>Open</Button>
         </div>
         <p className="mt-2 truncate text-xs text-muted">{item.creator.name} · {item.store.name}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2"><RegistryStatusPill type="performance" status={item.performanceStatus} />{item.revisionState !== 'NONE' ? <RegistryStatusPill type="revision" status={item.revisionState} /> : null}<span className="pill border border-border bg-background-secondary text-muted">{item.kind === 'VIDEO' ? 'Video' : 'Static'}</span>{item.linked ? <span className="pill border-none bg-success-soft/40 text-success dark:bg-success/15">Meta linked</span> : <span className="pill pill-neutral">Not linked</span>}{item.aiAnalyzed ? <span className="pill border-none bg-primary-soft/60 text-primary" title={item.aiAnalyzedAt ? `Last analyzed ${new Date(item.aiAnalyzedAt).toLocaleDateString()}` : undefined}>AI analyzed</span> : null}</div>
+        <div className="mt-3 flex flex-wrap items-center gap-2"><RegistryStatusPill type="performance" status={item.performanceStatus} />{item.revisionState !== 'NONE' ? <RegistryStatusPill type="revision" status={item.revisionState} /> : null}<span className="pill border border-border bg-background-secondary text-muted">{item.kind === 'VIDEO' ? 'Video' : 'Static'}</span>{item.linked ? <span className="pill border-none bg-success-soft/40 text-success dark:bg-success/15">Meta linked</span> : <span className="pill pill-neutral">Not linked</span>}{item.aiAnalyzed ? <span className="pill border-none bg-primary-soft/60 text-primary" title={item.aiAnalyzedAt ? `Last analyzed ${new Date(item.aiAnalyzedAt).toLocaleDateString()}` : undefined}>AI analyzed</span> : null}{item.gate || item.gateInProgress ? <GatePill asset={item} /> : null}</div>
         {/* A static has no hook or hold to measure, so it reports reach instead. */}
         <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-border pt-4">
           {(item.kind === 'VIDEO' ? [
